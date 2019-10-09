@@ -1,19 +1,16 @@
 package main
 
 import (
-	"context"
 	"crypto/tls"
-	"fmt"
+	"log"
 	"net/http"
 	"os"
 
-	"github.com/ProtonMail/go-autostart"
 	"github.com/getlantern/systray"
-	"github.com/nextdns/nextdns/proxy"
 	"golang.org/x/net/http2"
 
-	"github.com/rs/nextdns-windows/dns"
 	"github.com/rs/nextdns-windows/icon"
+	"github.com/rs/nextdns-windows/proxy"
 	"github.com/rs/nextdns-windows/settings"
 )
 
@@ -21,79 +18,53 @@ func displayError(err error) {
 	if err == nil {
 		return
 	}
-	fmt.Println(err)
+	log.Print(err)
 	// TODO: show a window
 }
 
 func main() {
+	log.SetOutput(os.Stdout)
 	s := settings.Load()
-
-	const endpointBase = "https://45.90.28.0/"
-	endpoint := endpointBase + s.Configuration
-
-	self, err := os.Executable()
-	if err != nil {
-		displayError(err)
-	} else {
-		println(self)
-		app := &autostart.App{
-			Name:        "NextDNS",
-			DisplayName: "NextDNS",
-			Exec:        []string{self},
-		}
-		if !app.IsEnabled() {
-			if err := app.Enable(); err != nil {
-				displayError(err)
-			}
-		}
-	}
-
-	go func() {
-		p := proxy.Proxy{
-			Addr: "127.0.0.1:53",
-			Upstream: func(qname string) string {
-				return endpoint
-			},
-			Client: &http.Client{
-				Transport: &http2.Transport{
-					TLSClientConfig: &tls.Config{
-						ServerName: "dns.nextdns.io",
-					},
+	p := &proxy.Proxy{
+		Client: &http.Client{
+			Transport: &http2.Transport{
+				TLSClientConfig: &tls.Config{
+					ServerName: "dns.nextdns.io",
 				},
 			},
-		}
-		if err := p.ListenAndServe(context.Background()); err != nil {
-			displayError(err)
-		}
-	}()
+		},
+	}
+	const upstreamBase = "https://45.90.28.0/"
+	p.Upstream = upstreamBase + s.Configuration
 
 	systray.Run(func() {
 		systray.SetIcon(icon.Data)
 		systray.SetTitle("NextDNS")
 		systray.SetTooltip("NextDNS Client")
 
-		connect := systray.AddMenuItem("Connect", "Toggle NextDNS")
-		var connected bool
+		connect := systray.AddMenuItem("Enable", "Toggle NextDNS")
+		var started bool
 		updateLabel := func() {
 			var err error
-			connected, err = dns.Enabled()
+			started, err = p.Started()
 			if err != nil {
 				displayError(err)
 			}
-			if connected {
-				connect.SetTitle("Disconnect")
+			if started {
+				connect.SetTitle("Disable")
 			} else {
-				connect.SetTitle("Connect")
+				connect.SetTitle("Enable")
 			}
 		}
+		p.OnStateChange = updateLabel
 		updateLabel()
 		go func() {
 			for {
 				<-connect.ClickedCh
-				if !connected {
-					displayError(dns.Enable())
+				if !started {
+					displayError(p.Start())
 				} else {
-					displayError(dns.Disable())
+					displayError(p.Stop())
 				}
 				updateLabel()
 			}
@@ -104,7 +75,7 @@ func main() {
 			for {
 				<-preferences.ClickedCh
 				displayError(s.Edit())
-				endpoint = endpointBase + s.Configuration
+				p.Upstream = upstreamBase + s.Configuration
 			}
 		}()
 
