@@ -1,0 +1,10 @@
+module github.com/rs/nextdns-windows
+
+go 1.13
+
+require (
+	github.com/kardianos/service v1.0.0
+	golang.org/x/net v0.0.0-20191003171128-d98b1b443823
+	golang.org/x/sys v0.0.0-20191003212358-c178f38b412c
+	golang.zx2c4.com/wireguard v0.0.20191012
+)
