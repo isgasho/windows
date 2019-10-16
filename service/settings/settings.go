@@ -8,8 +8,9 @@ import (
 )
 
 type Settings struct {
-	Configuration    string
-	ReportDeviceName bool
+	Configuration           string
+	DisableReportDeviceName bool
+	DisableCheckUpdate      bool
 }
 
 var confFile = func() string {
@@ -33,7 +34,10 @@ func FromMap(m map[string]interface{}) Settings {
 		s.Configuration = v
 	}
 	if v, ok := m["reportDeviceName"].(bool); ok {
-		s.ReportDeviceName = v
+		s.DisableReportDeviceName = !v
+	}
+	if v, ok := m["checkUpdate"].(bool); ok {
+		s.DisableCheckUpdate = !v
 	}
 	return s
 }
@@ -41,7 +45,8 @@ func FromMap(m map[string]interface{}) Settings {
 func (s Settings) ToMap() map[string]interface{} {
 	return map[string]interface{}{
 		"configuration":    s.Configuration,
-		"reportDeviceName": s.ReportDeviceName,
+		"reportDeviceName": !s.DisableReportDeviceName,
+		"checkUpdate":      !s.DisableCheckUpdate,
 	}
 }
 

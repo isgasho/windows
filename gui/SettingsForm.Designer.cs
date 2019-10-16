@@ -39,6 +39,7 @@
             this.configurationLabel = new System.Windows.Forms.Label();
             this.configuration = new System.Windows.Forms.TextBox();
             this.generalGroupBox = new System.Windows.Forms.GroupBox();
+            this.checkUpdate = new System.Windows.Forms.CheckBox();
             this.reportDeviceName = new System.Windows.Forms.CheckBox();
             this.save = new System.Windows.Forms.Button();
             this.cancel = new System.Windows.Forms.Button();
@@ -111,6 +112,7 @@
             // 
             // generalGroupBox
             // 
+            this.generalGroupBox.Controls.Add(this.checkUpdate);
             this.generalGroupBox.Controls.Add(this.reportDeviceName);
             this.generalGroupBox.Controls.Add(this.configuration);
             this.generalGroupBox.Controls.Add(this.configurationLabel);
@@ -122,6 +124,17 @@
             this.generalGroupBox.TabIndex = 3;
             this.generalGroupBox.TabStop = false;
             this.generalGroupBox.Text = "General";
+            // 
+            // checkUpdate
+            // 
+            this.checkUpdate.AutoSize = true;
+            this.checkUpdate.ForeColor = System.Drawing.SystemColors.ControlText;
+            this.checkUpdate.Location = new System.Drawing.Point(11, 202);
+            this.checkUpdate.Name = "checkUpdate";
+            this.checkUpdate.Size = new System.Drawing.Size(180, 29);
+            this.checkUpdate.TabIndex = 4;
+            this.checkUpdate.Text = "Check Update";
+            this.checkUpdate.UseVisualStyleBackColor = true;
             // 
             // reportDeviceName
             // 
@@ -177,7 +190,6 @@
             this.generalGroupBox.ResumeLayout(false);
             this.generalGroupBox.PerformLayout();
             this.ResumeLayout(false);
-
         }
 
         #endregion
@@ -194,6 +206,7 @@
         private System.Windows.Forms.CheckBox reportDeviceName;
         private System.Windows.Forms.Button save;
         private System.Windows.Forms.Button cancel;
+        private System.Windows.Forms.CheckBox checkUpdate;
     }
 }
 

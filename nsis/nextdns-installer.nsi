@@ -140,7 +140,7 @@ Section "NextDNS"
   DetailPrint "Stopping NextDNS..."
   ${nsProcess::KillProcess} "${MUI_PRODUCT}.exe" $R0
   ${nsProcess::Unload}
-
+  Sleep 1000
   File "/oname=${MUI_PRODUCT}.exe" "..\gui\bin\gui.exe"
  
   ; Store installation folder
@@ -170,7 +170,7 @@ Section "NextDNS"
 	WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\${MUI_PRODUCT}" "HelpLink" "${HELPURL}"
 	WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\${MUI_PRODUCT}" "URLUpdateInfo" "${UPDATEURL}"
 	WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\${MUI_PRODUCT}" "URLInfoAbout" "${ABOUTURL}"
-	WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\${MUI_PRODUCT}" "DisplayVersion" "${VERSIONMAJOR}.${VERSIONMINOR}.${VERSIONBUILD}"
+	WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\${MUI_PRODUCT}" "DisplayVersion" "${MUI_VERSION}"
 	WriteRegDWORD HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\${MUI_PRODUCT}" "VersionMajor" ${VERSIONMAJOR}
 	WriteRegDWORD HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\${MUI_PRODUCT}" "VersionMinor" ${VERSIONMINOR}
 	# There is no option for modifying or repairing the install
@@ -179,6 +179,11 @@ Section "NextDNS"
 
   DetailPrint "Starting NextDNS..."
   ExecShell "" "$INSTDIR\${MUI_PRODUCT}.exe"
+
+  # Write version file
+  FileOpen $4 "$INSTDIR\version.txt" w
+  FileWrite $4 "${MUI_VERSION}"
+  FileClose $4
 SectionEnd
 
 Section "Uninstall"

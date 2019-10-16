@@ -15,6 +15,7 @@ import (
 	"github.com/rs/nextdns-windows/ctl"
 	"github.com/rs/nextdns-windows/proxy"
 	"github.com/rs/nextdns-windows/settings"
+	"github.com/rs/nextdns-windows/updater"
 )
 
 const upstreamBase = "https://45.90.28.0/"
@@ -42,6 +43,11 @@ func main() {
 	stdlog.SetOutput(os.Stdout)
 	svcFlag := flag.String("service", "", fmt.Sprintf("Control the system service.\nValid actions: %s", strings.Join(service.ControlAction[:], ", ")))
 	flag.Parse()
+
+	up := &updater.Updater{
+		URL: "https://storage.googleapis.com/nextdns_windows/info.json",
+	}
+	up.SetAutoRun(!settings.Load().DisableCheckUpdate)
 
 	var p *proxySvc
 	p = &proxySvc{
@@ -92,6 +98,7 @@ func main() {
 						s := settings.FromMap(e.Data)
 						_ = s.Save()
 						p.Upstream = upstreamBase + s.Configuration
+						up.SetAutoRun(!s.DisableCheckUpdate)
 					}
 					_ = p.ctl.Broadcast(ctl.Event{
 						Name: "settings",
@@ -132,6 +139,12 @@ func main() {
 		_ = log.Error(err)
 	}
 	p.ctl.ErrorLog = func(err error) {
+		_ = log.Error(err)
+	}
+	up.OnUpgrade = func(newVersion string) {
+		_ = log.Infof("upgrading from %s to %s", updater.CurrentVersion(), newVersion)
+	}
+	up.ErrorLog = func(err error) {
 		_ = log.Error(err)
 	}
 	if len(*svcFlag) != 0 {
