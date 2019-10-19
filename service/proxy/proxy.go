@@ -20,9 +20,8 @@ type Proxy struct {
 	Upstream      string
 	OnStateChange func()
 
-	// Client specifies the http client to use to communicate with the upstream.
-	// If not set, http.DefaultClient is used.
-	Client *http.Client
+	// Transport is the http.RoundTripper used to perform DoH requests.
+	Transport http.RoundTripper
 
 	// QueryLog specifies an optional log function called for each received query.
 	QueryLog func(qname string)
@@ -30,6 +29,8 @@ type Proxy struct {
 	// ErrorLog specifies an optional log function for errors. If not set,
 	// errors are not reported.
 	ErrorLog func(error)
+
+	InfoLog func(string)
 
 	mu  sync.Mutex
 	tun io.ReadWriteCloser
@@ -60,6 +61,11 @@ func (p *Proxy) logQuery(qname string) {
 	}
 }
 
+func (p *Proxy) logInfo(msg string) {
+	if p.InfoLog != nil {
+		p.InfoLog(msg)
+	}
+}
 func (p *Proxy) logErr(err error) {
 	if err != nil && p.ErrorLog != nil {
 		p.ErrorLog(err)
@@ -151,7 +157,7 @@ func (p *Proxy) unleak(ctx context.Context) error {
 		s := bufio.NewScanner(r)
 		for s.Scan() {
 			l := s.Text()
-			p.logErr(fmt.Errorf("dnsunleak: %s", l))
+			p.logInfo(fmt.Sprintf("dnsunleak: %s", l))
 		}
 	}()
 	return cmd.Start()
@@ -163,11 +169,11 @@ func (p *Proxy) resolve(buf []byte) (io.ReadCloser, error) {
 		return nil, err
 	}
 	req.Header.Set("Content-Type", "application/dns-packet")
-	c := p.Client
-	if c == nil {
-		c = http.DefaultClient
+	rt := p.Transport
+	if rt == nil {
+		rt = http.DefaultTransport
 	}
-	res, err := c.Do(req)
+	res, err := rt.RoundTrip(req)
 	if err != nil {
 		return nil, err
 	}

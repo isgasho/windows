@@ -15,6 +15,8 @@ type Server struct {
 
 	Handler EventHandler
 
+	OnStart func()
+
 	// ErrorLog specifies an optional log function for errors. If not set,
 	// errors are not reported.
 	ErrorLog func(error)

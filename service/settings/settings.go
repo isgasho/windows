@@ -8,6 +8,7 @@ import (
 )
 
 type Settings struct {
+	Enabled                 bool
 	Configuration           string
 	DisableReportDeviceName bool
 	DisableCheckUpdate      bool
@@ -29,7 +30,10 @@ func Load() Settings {
 }
 
 func FromMap(m map[string]interface{}) Settings {
-	var s Settings
+	s := Load()
+	if v, ok := m["enabled"].(bool); ok {
+		s.Enabled = v
+	}
 	if v, ok := m["configuration"].(string); ok {
 		s.Configuration = v
 	}
@@ -44,6 +48,7 @@ func FromMap(m map[string]interface{}) Settings {
 
 func (s Settings) ToMap() map[string]interface{} {
 	return map[string]interface{}{
+		"enabled":          s.Enabled,
 		"configuration":    s.Configuration,
 		"reportDeviceName": !s.DisableReportDeviceName,
 		"checkUpdate":      !s.DisableCheckUpdate,

@@ -20,6 +20,9 @@ func (s *Server) Start() error {
 	}
 	s.closer = ln
 	go s.run(ln)
+	if s.OnStart != nil {
+		s.OnStart()
+	}
 	return nil
 }
 

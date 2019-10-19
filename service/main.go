@@ -1,16 +1,16 @@
 package main
 
 import (
-	"crypto/tls"
 	"flag"
 	"fmt"
 	stdlog "log"
+	"math/rand"
 	"net/http"
 	"os"
 	"strings"
 
 	"github.com/kardianos/service"
-	"golang.org/x/net/http2"
+	"github.com/nextdns/nextdns/endpoint"
 
 	"github.com/rs/nextdns-windows/ctl"
 	"github.com/rs/nextdns-windows/proxy"
@@ -18,13 +18,14 @@ import (
 	"github.com/rs/nextdns-windows/updater"
 )
 
-const upstreamBase = "https://45.90.28.0/"
+const upstreamBase = "https://dns.nextdns.io/"
 
 var log service.Logger
 
 type proxySvc struct {
 	proxy.Proxy
-	ctl ctl.Server
+	router endpoint.Manager
+	ctl    ctl.Server
 }
 
 func (p *proxySvc) Start(s service.Service) error {
@@ -52,19 +53,48 @@ func main() {
 	var p *proxySvc
 	p = &proxySvc{
 		proxy.Proxy{
-			Client: &http.Client{
-				Transport: &http2.Transport{
-					TLSClientConfig: &tls.Config{
-						ServerName: "dns.nextdns.io",
+			Upstream: upstreamBase + settings.Load().Configuration,
+		},
+		endpoint.Manager{
+			Providers: []endpoint.Provider{
+				// Prefer unicast routing.
+				endpoint.SourceURLProvider{
+					SourceURL: "https://router.nextdns.io",
+					Client: &http.Client{
+						// Trick to avoid depending on DNS to contact the router API.
+						Transport: endpoint.NewTransport(
+							endpoint.New("router.nextdns.io", "", []string{
+								"216.239.32.21",
+								"216.239.34.21",
+								"216.239.36.21",
+								"216.239.38.21",
+							}[rand.Intn(3)])),
 					},
 				},
+				// Fallback on anycast.
+				endpoint.StaticProvider(endpoint.New("dns1.nextdns.io", "", "45.90.28.0")),
+				endpoint.StaticProvider(endpoint.New("dns2.nextdns.io", "", "45.90.30.0")),
+				// Fallback on CDN fronting.
+				endpoint.StaticProvider(endpoint.New("d1xovudkxbl47e.cloudfront.net", "", "")),
 			},
-			Upstream: upstreamBase + settings.Load().Configuration,
+			OnError: func(e endpoint.Endpoint, err error) {
+				_ = log.Warningf("Endpoint failed: %s: %v", e.Hostname, err)
+			},
+			OnChange: func(e endpoint.Endpoint, rt http.RoundTripper) {
+				_ = log.Infof("Switching endpoint: %s", e.Hostname)
+				p.Transport = rt
+			},
 		},
 		ctl.Server{
 			Namespace: "NextDNS",
+			OnStart: func() {
+				s := settings.Load()
+				if s.Enabled {
+					_ = p.Proxy.Start()
+				}
+			},
 			Handler: ctl.EventHandlerFunc(func(e ctl.Event) {
-				_ = log.Infof("received event: %s %#v", e.Name, e.Data)
+				_ = log.Infof("received event: %s %v", e.Name, e.Data)
 				switch e.Name {
 				case "open":
 					// Use to open the GUI window in the existing instance of
@@ -77,6 +107,13 @@ func main() {
 						err = p.Proxy.Start()
 					case "disable":
 						err = p.Proxy.Stop()
+					}
+					if e.Name != "status" {
+						s := settings.Load()
+						s.Enabled = e.Name == "enable"
+						if err := s.Save(); err != nil {
+							p.ErrorLog(fmt.Errorf("cannot write settings: %v", err))
+						}
 					}
 					if err != nil {
 						_ = p.ctl.Broadcast(ctl.Event{
@@ -96,7 +133,9 @@ func main() {
 				case "settings":
 					if e.Data != nil {
 						s := settings.FromMap(e.Data)
-						_ = s.Save()
+						if err := s.Save(); err != nil {
+							p.ErrorLog(fmt.Errorf("cannot write settings: %v", err))
+						}
 						p.Upstream = upstreamBase + s.Configuration
 						up.SetAutoRun(!s.DisableCheckUpdate)
 					}
@@ -134,6 +173,9 @@ func main() {
 	}()
 	p.QueryLog = func(qname string) {
 		_ = log.Infof("resolve %s", qname)
+	}
+	p.InfoLog = func(msg string) {
+		_ = log.Info(msg)
 	}
 	p.ErrorLog = func(err error) {
 		_ = log.Error(err)
