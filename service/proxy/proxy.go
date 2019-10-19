@@ -27,7 +27,7 @@ type Proxy struct {
 	Transport http.RoundTripper
 
 	// QueryLog specifies an optional log function called for each received query.
-	QueryLog func(qname string)
+	QueryLog func(msgID uint16, qname string)
 
 	// ErrorLog specifies an optional log function for errors. If not set,
 	// errors are not reported.
@@ -37,6 +37,8 @@ type Proxy struct {
 
 	mu  sync.Mutex
 	tun io.ReadWriteCloser
+
+	dedup dedup
 }
 
 func (p *Proxy) Started() (bool, error) {
@@ -58,9 +60,9 @@ func (p *Proxy) Stop() (err error) {
 	return nil
 }
 
-func (p *Proxy) logQuery(qname string) {
+func (p *Proxy) logQuery(msgID uint16, qname string) {
 	if p.QueryLog != nil {
-		p.QueryLog(qname)
+		p.QueryLog(msgID, qname)
 	}
 }
 
@@ -107,7 +109,9 @@ func (p *Proxy) run() {
 		buf := *bpool.Get().(*[]byte)
 		qsize, err := p.tun.Read(buf)
 		if err != nil {
-			p.logErr(fmt.Errorf("tun read err: %v", err))
+			if err != io.EOF {
+				p.logErr(fmt.Errorf("tun read err: %v", err))
+			}
 			break
 		}
 		if qsize <= 20 {
@@ -122,13 +126,18 @@ func (p *Proxy) run() {
 			// Skip packet not directed to us.
 			continue
 		}
+		msgID := lazyMsgID(buf)
+		if p.dedup.IsDup(msgID) {
+			// Skip duplicated query.
+			continue
+		}
 		go func() {
 			defer bpool.Put(&buf)
 			qname := lazyQName(buf)
-			p.logQuery(qname)
+			p.logQuery(msgID, qname)
 			res, err := p.resolve(buf[:qsize])
 			if err != nil {
-				p.logErr(fmt.Errorf("resolve: %v", err))
+				p.logErr(fmt.Errorf("resolve: %x %v", msgID, err))
 				return
 			}
 			rsize, err := readDNSResponse(res, buf)
@@ -209,6 +218,15 @@ func readDNSResponse(r io.Reader, buf []byte) (int, error) {
 		}
 	}
 	return n, nil
+}
+
+// lazyMsgID parses the message ID from a DNS query wything trying to parse or
+// validate the whole query.
+func lazyMsgID(buf []byte) uint16 {
+	if len(buf) < 30 {
+		return 0
+	}
+	return uint16(buf[28])<<8 | uint16(buf[29])
 }
 
 // lazyQName parses the qname from a DNS query without trying to parse or

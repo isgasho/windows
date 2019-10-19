@@ -58,6 +58,15 @@ func main() {
 	p = &proxySvc{
 		proxy.Proxy{
 			Upstream: upstreamBase + settings.Load().Configuration,
+			OnStateChange: func() {
+				status, _ := p.Proxy.Started()
+				_ = p.ctl.Broadcast(ctl.Event{
+					Name: "status",
+					Data: map[string]interface{}{
+						"enabled": status,
+					},
+				})
+			},
 		},
 		endpoint.Manager{
 			Providers: []endpoint.Provider{
@@ -108,20 +117,13 @@ func main() {
 					// Use to open the GUI window in the existing instance of
 					// the app when a duplicate instance is open.
 					_ = p.ctl.Broadcast(ctl.Event{Name: "open"})
-				case "enable", "disable", "status":
+				case "enable", "disable":
 					var err error
 					switch e.Name {
 					case "enable":
 						err = p.Proxy.Start()
 					case "disable":
 						err = p.Proxy.Stop()
-					}
-					if e.Name != "status" {
-						s := settings.Load()
-						s.Enabled = e.Name == "enable"
-						if err := s.Save(); err != nil {
-							p.ErrorLog(fmt.Errorf("cannot write settings: %v", err))
-						}
 					}
 					if err != nil {
 						_ = p.ctl.Broadcast(ctl.Event{
@@ -131,6 +133,12 @@ func main() {
 							},
 						})
 					}
+					s := settings.Load()
+					s.Enabled = e.Name == "enable"
+					if err := s.Save(); err != nil {
+						p.ErrorLog(fmt.Errorf("cannot write settings: %v", err))
+					}
+				case "status":
 					status, _ := p.Proxy.Started()
 					_ = p.ctl.Broadcast(ctl.Event{
 						Name: "status",
@@ -186,8 +194,8 @@ func main() {
 			}
 		}
 	}()
-	p.QueryLog = func(qname string) {
-		_ = log.Infof("resolve %s", qname)
+	p.QueryLog = func(msgID uint16, qname string) {
+		_ = log.Infof("resolve %x %s", msgID, qname)
 	}
 	p.InfoLog = func(msg string) {
 		_ = log.Info(msg)
