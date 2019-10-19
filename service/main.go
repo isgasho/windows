@@ -9,6 +9,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/denisbrodbeck/machineid"
 	"github.com/kardianos/service"
 	"github.com/nextdns/nextdns/endpoint"
 
@@ -44,6 +45,9 @@ func main() {
 	stdlog.SetOutput(os.Stdout)
 	svcFlag := flag.String("service", "", fmt.Sprintf("Control the system service.\nValid actions: %s", strings.Join(service.ControlAction[:], ", ")))
 	flag.Parse()
+
+	hostname, _ := os.Hostname()
+	machinID, _ := machineid.ID()
 
 	up := &updater.Updater{
 		URL: "https://storage.googleapis.com/nextdns_windows/info.json",
@@ -89,6 +93,10 @@ func main() {
 			Namespace: "NextDNS",
 			OnStart: func() {
 				s := settings.Load()
+				if !s.DisableReportDeviceName {
+					p.Hostname = hostname
+					p.HostID = machinID
+				}
 				if s.Enabled {
 					_ = p.Proxy.Start()
 				}
@@ -137,6 +145,13 @@ func main() {
 							p.ErrorLog(fmt.Errorf("cannot write settings: %v", err))
 						}
 						p.Upstream = upstreamBase + s.Configuration
+						if !s.DisableReportDeviceName {
+							p.Hostname = hostname
+							p.HostID = machinID
+						} else {
+							p.Hostname = ""
+							p.HostID = ""
+						}
 						up.SetAutoRun(!s.DisableCheckUpdate)
 					}
 					_ = p.ctl.Broadcast(ctl.Event{

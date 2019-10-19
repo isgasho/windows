@@ -17,7 +17,10 @@ import (
 )
 
 type Proxy struct {
-	Upstream      string
+	Upstream string
+	Hostname string
+	HostID   string
+
 	OnStateChange func()
 
 	// Transport is the http.RoundTripper used to perform DoH requests.
@@ -169,6 +172,12 @@ func (p *Proxy) resolve(buf []byte) (io.ReadCloser, error) {
 		return nil, err
 	}
 	req.Header.Set("Content-Type", "application/dns-packet")
+	if p.Hostname != "" {
+		req.Header.Set("X-Device-Name", p.Hostname)
+	}
+	if p.HostID != "" {
+		req.Header.Set("X-Device-Id", p.HostID)
+	}
 	rt := p.Transport
 	if rt == nil {
 		rt = http.DefaultTransport
