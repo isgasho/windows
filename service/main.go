@@ -52,12 +52,11 @@ func main() {
 	up := &updater.Updater{
 		URL: "https://storage.googleapis.com/nextdns_windows/info.json",
 	}
-	up.SetAutoRun(!settings.Load().DisableCheckUpdate)
 
 	var p *proxySvc
 	p = &proxySvc{
 		proxy.Proxy{
-			Upstream: upstreamBase + settings.Load().Configuration,
+			Upstream: upstreamBase,
 			OnStateChange: func() {
 				status, _ := p.Proxy.Started()
 				_ = p.ctl.Broadcast(ctl.Event{
@@ -100,16 +99,6 @@ func main() {
 		},
 		ctl.Server{
 			Namespace: "NextDNS",
-			OnStart: func() {
-				s := settings.Load()
-				if !s.DisableReportDeviceName {
-					p.Hostname = hostname
-					p.HostID = machinID
-				}
-				if s.Enabled {
-					_ = p.Proxy.Start()
-				}
-			},
 			Handler: ctl.EventHandlerFunc(func(e ctl.Event) {
 				_ = log.Infof("received event: %s %v", e.Name, e.Data)
 				switch e.Name {
@@ -133,11 +122,6 @@ func main() {
 							},
 						})
 					}
-					s := settings.Load()
-					s.Enabled = e.Name == "enable"
-					if err := s.Save(); err != nil {
-						p.ErrorLog(fmt.Errorf("cannot write settings: %v", err))
-					}
 				case "status":
 					status, _ := p.Proxy.Started()
 					_ = p.ctl.Broadcast(ctl.Event{
@@ -149,23 +133,16 @@ func main() {
 				case "settings":
 					if e.Data != nil {
 						s := settings.FromMap(e.Data)
-						if err := s.Save(); err != nil {
-							p.ErrorLog(fmt.Errorf("cannot write settings: %v", err))
-						}
 						p.Upstream = upstreamBase + s.Configuration
-						if !s.DisableReportDeviceName {
+						if s.ReportDeviceName {
 							p.Hostname = hostname
 							p.HostID = machinID
 						} else {
 							p.Hostname = ""
 							p.HostID = ""
 						}
-						up.SetAutoRun(!s.DisableCheckUpdate)
+						up.SetAutoRun(s.CheckUpdates)
 					}
-					_ = p.ctl.Broadcast(ctl.Event{
-						Name: "settings",
-						Data: settings.Load().ToMap(),
-					})
 				default:
 					p.ErrorLog(fmt.Errorf("invalid event: %v", e))
 				}

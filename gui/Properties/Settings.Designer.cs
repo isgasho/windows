@@ -22,5 +22,53 @@ namespace NextDNS.Properties {
                 return defaultInstance;
             }
         }
+        
+        [global::System.Configuration.UserScopedSettingAttribute()]
+        [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
+        [global::System.Configuration.DefaultSettingValueAttribute("")]
+        public string Configuration {
+            get {
+                return ((string)(this["Configuration"]));
+            }
+            set {
+                this["Configuration"] = value;
+            }
+        }
+        
+        [global::System.Configuration.UserScopedSettingAttribute()]
+        [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
+        [global::System.Configuration.DefaultSettingValueAttribute("True")]
+        public bool ReportDeviceName {
+            get {
+                return ((bool)(this["ReportDeviceName"]));
+            }
+            set {
+                this["ReportDeviceName"] = value;
+            }
+        }
+        
+        [global::System.Configuration.UserScopedSettingAttribute()]
+        [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
+        [global::System.Configuration.DefaultSettingValueAttribute("True")]
+        public bool CheckUpdates {
+            get {
+                return ((bool)(this["CheckUpdates"]));
+            }
+            set {
+                this["CheckUpdates"] = value;
+            }
+        }
+        
+        [global::System.Configuration.UserScopedSettingAttribute()]
+        [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
+        [global::System.Configuration.DefaultSettingValueAttribute("False")]
+        public bool Enabled {
+            get {
+                return ((bool)(this["Enabled"]));
+            }
+            set {
+                this["Enabled"] = value;
+            }
+        }
     }
 }

@@ -1,64 +1,21 @@
 package settings
 
-import (
-	"encoding/json"
-	"io/ioutil"
-	"os"
-	"path/filepath"
-)
-
 type Settings struct {
-	Enabled                 bool
-	Configuration           string
-	DisableReportDeviceName bool
-	DisableCheckUpdate      bool
-}
-
-var confFile = func() string {
-	ex, _ := os.Executable()
-	return filepath.Join(filepath.Dir(ex), "settings.json")
-}()
-
-func Load() Settings {
-	var s Settings
-	b, err := ioutil.ReadFile(confFile)
-	if err != nil {
-		return s
-	}
-	_ = json.Unmarshal(b, &s)
-	return s
+	Configuration    string
+	ReportDeviceName bool
+	CheckUpdates     bool
 }
 
 func FromMap(m map[string]interface{}) Settings {
-	s := Load()
-	if v, ok := m["enabled"].(bool); ok {
-		s.Enabled = v
-	}
+	var s Settings
 	if v, ok := m["configuration"].(string); ok {
 		s.Configuration = v
 	}
 	if v, ok := m["reportDeviceName"].(bool); ok {
-		s.DisableReportDeviceName = !v
+		s.ReportDeviceName = !v
 	}
-	if v, ok := m["checkUpdate"].(bool); ok {
-		s.DisableCheckUpdate = !v
+	if v, ok := m["checkUpdates"].(bool); ok {
+		s.CheckUpdates = !v
 	}
 	return s
-}
-
-func (s Settings) ToMap() map[string]interface{} {
-	return map[string]interface{}{
-		"enabled":          s.Enabled,
-		"configuration":    s.Configuration,
-		"reportDeviceName": !s.DisableReportDeviceName,
-		"checkUpdate":      !s.DisableCheckUpdate,
-	}
-}
-
-func (s Settings) Save() error {
-	b, err := json.Marshal(s)
-	if err != nil {
-		return err
-	}
-	return ioutil.WriteFile(confFile, b, 0600)
 }

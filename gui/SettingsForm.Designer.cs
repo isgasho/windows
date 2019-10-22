@@ -190,6 +190,7 @@
             this.generalGroupBox.ResumeLayout(false);
             this.generalGroupBox.PerformLayout();
             this.ResumeLayout(false);
+
         }
 
         #endregion

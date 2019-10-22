@@ -42,11 +42,15 @@ namespace NextDNS
 
             [DataMember]
             public bool reportDeviceName;
+
+            [DataMember]
+            public bool checkUpdates;
         }
         class Client
         {
             private NamedPipeClientStream pipe;
             public event EventHandler<Event> EventReceived;
+            public event EventHandler Connected;
 
             public Client()
             {
@@ -83,15 +87,7 @@ namespace NextDNS
                     }
                 }
                 StartReadingAsync();
-                try
-                {
-                    // Request up to date status / settings on connect.
-                    await SendAsync(new Event("status")).ConfigureAwait(false);
-                    await SendAsync(new Event("settings")).ConfigureAwait(false);
-                }
-                catch (Exception)
-                {
-                }
+                Connected?.Invoke(this, EventArgs.Empty);
             }
 
             async public void StartReadingAsync()
