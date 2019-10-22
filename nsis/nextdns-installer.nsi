@@ -121,6 +121,7 @@ Section "NextDNS Service"
 
   ; Install service
   nsExec::ExecToLog '"${MUI_PRODUCT}Service.exe" -service stop'
+  Sleep 5000
   ${If} ${RunningX64}
     File "/oname=${MUI_PRODUCT}Service.exe" "..\service\bin\amd64\service.exe"
   ${Else}
@@ -142,7 +143,7 @@ Section "NextDNS"
   DetailPrint "Stopping NextDNS..."
   ${nsProcess::KillProcess} "${MUI_PRODUCT}.exe" $R0
   ${nsProcess::Unload}
-  Sleep 1000
+  Sleep 5000
   File "/oname=${MUI_PRODUCT}.exe" "..\gui\bin\gui.exe"
  
   ; Store installation folder
