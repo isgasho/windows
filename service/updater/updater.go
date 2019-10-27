@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 )
@@ -34,6 +35,9 @@ type Updater struct {
 	// ErrorLog specifies an optional log function for errors. If not set,
 	// errors are not reported.
 	ErrorLog func(error)
+
+	// Channel is the channel to use for updates.
+	Channel string
 
 	mu   sync.Mutex
 	stop func()
@@ -94,16 +98,20 @@ func (u *Updater) CheckNow() error {
 	if err := dec.Decode(&i); err != nil {
 		return err
 	}
-	stable, found := i["stable"]
+	channelName := strings.ToLower(u.Channel)
+	if channelName == "" {
+		channelName = "stable"
+	}
+	channel, found := i[channelName]
 	if !found {
 		return errors.New("stable version info not found")
 	}
-	if stable.Version != currentVersion {
+	if channel.Version != currentVersion {
 		// Already on last version
 		if u.OnUpgrade != nil {
-			u.OnUpgrade(stable.Version)
+			u.OnUpgrade(channel.Version)
 		}
-		return u.upgrade(stable.URL)
+		return u.upgrade(channel.URL)
 	}
 	return nil
 }

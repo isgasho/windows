@@ -39,6 +39,8 @@
             this.configurationLabel = new System.Windows.Forms.Label();
             this.configuration = new System.Windows.Forms.TextBox();
             this.generalGroupBox = new System.Windows.Forms.GroupBox();
+            this.updateChannelLabel = new System.Windows.Forms.Label();
+            this.updateChannel = new System.Windows.Forms.ComboBox();
             this.checkUpdate = new System.Windows.Forms.CheckBox();
             this.reportDeviceName = new System.Windows.Forms.CheckBox();
             this.save = new System.Windows.Forms.Button();
@@ -103,8 +105,9 @@
             // 
             // configuration
             // 
+            this.configuration.AccessibleName = "Configuration ID";
             this.configuration.BorderStyle = System.Windows.Forms.BorderStyle.FixedSingle;
-            this.configuration.Location = new System.Drawing.Point(12, 104);
+            this.configuration.Location = new System.Drawing.Point(186, 60);
             this.configuration.Margin = new System.Windows.Forms.Padding(4);
             this.configuration.Name = "configuration";
             this.configuration.Size = new System.Drawing.Size(200, 31);
@@ -112,6 +115,8 @@
             // 
             // generalGroupBox
             // 
+            this.generalGroupBox.Controls.Add(this.updateChannelLabel);
+            this.generalGroupBox.Controls.Add(this.updateChannel);
             this.generalGroupBox.Controls.Add(this.checkUpdate);
             this.generalGroupBox.Controls.Add(this.reportDeviceName);
             this.generalGroupBox.Controls.Add(this.configuration);
@@ -120,26 +125,47 @@
             this.generalGroupBox.Margin = new System.Windows.Forms.Padding(4);
             this.generalGroupBox.Name = "generalGroupBox";
             this.generalGroupBox.Padding = new System.Windows.Forms.Padding(4);
-            this.generalGroupBox.Size = new System.Drawing.Size(712, 369);
+            this.generalGroupBox.Size = new System.Drawing.Size(712, 335);
             this.generalGroupBox.TabIndex = 3;
             this.generalGroupBox.TabStop = false;
             this.generalGroupBox.Text = "General";
+            // 
+            // updateChannelLabel
+            // 
+            this.updateChannelLabel.AutoSize = true;
+            this.updateChannelLabel.Location = new System.Drawing.Point(7, 256);
+            this.updateChannelLabel.Name = "updateChannelLabel";
+            this.updateChannelLabel.Size = new System.Drawing.Size(173, 25);
+            this.updateChannelLabel.TabIndex = 6;
+            this.updateChannelLabel.Text = "Update Channel:";
+            // 
+            // updateChannel
+            // 
+            this.updateChannel.FormattingEnabled = true;
+            this.updateChannel.Items.AddRange(new object[] {
+            "Stable",
+            "Beta"});
+            this.updateChannel.Location = new System.Drawing.Point(186, 253);
+            this.updateChannel.Name = "updateChannel";
+            this.updateChannel.Size = new System.Drawing.Size(166, 33);
+            this.updateChannel.TabIndex = 5;
             // 
             // checkUpdate
             // 
             this.checkUpdate.AutoSize = true;
             this.checkUpdate.ForeColor = System.Drawing.SystemColors.ControlText;
-            this.checkUpdate.Location = new System.Drawing.Point(11, 202);
+            this.checkUpdate.Location = new System.Drawing.Point(11, 209);
             this.checkUpdate.Name = "checkUpdate";
-            this.checkUpdate.Size = new System.Drawing.Size(180, 29);
+            this.checkUpdate.Size = new System.Drawing.Size(222, 29);
             this.checkUpdate.TabIndex = 4;
-            this.checkUpdate.Text = "Check Update";
+            this.checkUpdate.Text = "Check for Updates";
             this.checkUpdate.UseVisualStyleBackColor = true;
+            this.checkUpdate.CheckedChanged += new System.EventHandler(this.checkUpdate_CheckedChanged);
             // 
             // reportDeviceName
             // 
             this.reportDeviceName.AutoSize = true;
-            this.reportDeviceName.Location = new System.Drawing.Point(12, 165);
+            this.reportDeviceName.Location = new System.Drawing.Point(11, 109);
             this.reportDeviceName.Margin = new System.Windows.Forms.Padding(4);
             this.reportDeviceName.Name = "reportDeviceName";
             this.reportDeviceName.Size = new System.Drawing.Size(242, 29);
@@ -149,7 +175,7 @@
             // 
             // save
             // 
-            this.save.Location = new System.Drawing.Point(562, 613);
+            this.save.Location = new System.Drawing.Point(574, 405);
             this.save.Margin = new System.Windows.Forms.Padding(6);
             this.save.Name = "save";
             this.save.Size = new System.Drawing.Size(150, 44);
@@ -161,7 +187,7 @@
             // cancel
             // 
             this.cancel.DialogResult = System.Windows.Forms.DialogResult.Cancel;
-            this.cancel.Location = new System.Drawing.Point(400, 613);
+            this.cancel.Location = new System.Drawing.Point(412, 405);
             this.cancel.Margin = new System.Windows.Forms.Padding(6);
             this.cancel.Name = "cancel";
             this.cancel.Size = new System.Drawing.Size(150, 44);
@@ -176,7 +202,7 @@
             this.AutoScaleDimensions = new System.Drawing.SizeF(12F, 25F);
             this.AutoScaleMode = System.Windows.Forms.AutoScaleMode.Font;
             this.CancelButton = this.cancel;
-            this.ClientSize = new System.Drawing.Size(736, 681);
+            this.ClientSize = new System.Drawing.Size(736, 463);
             this.Controls.Add(this.cancel);
             this.Controls.Add(this.save);
             this.Controls.Add(this.generalGroupBox);
@@ -208,6 +234,8 @@
         private System.Windows.Forms.Button save;
         private System.Windows.Forms.Button cancel;
         private System.Windows.Forms.CheckBox checkUpdate;
+        private System.Windows.Forms.ComboBox updateChannel;
+        private System.Windows.Forms.Label updateChannelLabel;
     }
 }
 

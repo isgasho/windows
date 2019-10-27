@@ -1,12 +1,6 @@
 ﻿using System;
-using System.Collections.Generic;
 using System.ComponentModel;
-using System.Data;
 using System.Diagnostics;
-using System.Drawing;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
 using System.Windows.Forms;
 
 namespace NextDNS
@@ -29,6 +23,12 @@ namespace NextDNS
             configuration.Text = Properties.Settings.Default.Configuration;
             reportDeviceName.Checked = Properties.Settings.Default.ReportDeviceName;
             checkUpdate.Checked = Properties.Settings.Default.CheckUpdates;
+            updateChannel.SelectedIndex = Properties.Settings.Default.UpdateChannel == "Stable" ? 0 : 1;
+
+            if (Properties.Settings.Default.Configuration.Length == 0)
+            {
+                Show();
+            }
         }
 
         async private void Service_Connected(object sender, EventArgs e)
@@ -66,6 +66,7 @@ namespace NextDNS
             settings.data.configuration = Properties.Settings.Default.Configuration;
             settings.data.reportDeviceName = Properties.Settings.Default.ReportDeviceName;
             settings.data.checkUpdates = Properties.Settings.Default.CheckUpdates;
+            settings.data.updateChannel = Properties.Settings.Default.UpdateChannel;
             try
             {
                 await service.SendAsync(settings).ConfigureAwait(false);
@@ -123,6 +124,7 @@ namespace NextDNS
             Properties.Settings.Default.Configuration = configuration.Text;
             Properties.Settings.Default.ReportDeviceName = reportDeviceName.Checked;
             Properties.Settings.Default.CheckUpdates = checkUpdate.Checked;
+            Properties.Settings.Default.UpdateChannel = updateChannel.SelectedIndex == 0 ? "Stable" : "Beta";
             Properties.Settings.Default.Save();
         }
 
@@ -170,6 +172,11 @@ namespace NextDNS
             }
 
             Environment.Exit(1);
+        }
+
+        private void checkUpdate_CheckedChanged(object sender, EventArgs e)
+        {
+            updateChannel.Enabled = checkUpdate.Checked;
         }
     }
 }

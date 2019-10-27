@@ -2,10 +2,7 @@
 using System.IO;
 using System.IO.Pipes;
 using System.Text;
-using System.Security.Principal;
 using System.Diagnostics;
-using System.Threading;
-using System.Collections.Generic;
 using System.Runtime.Serialization;
 using System.Runtime.Serialization.Json;
 using System.Threading.Tasks;
@@ -45,6 +42,9 @@ namespace NextDNS
 
             [DataMember]
             public bool checkUpdates;
+
+            [DataMember]
+            public string updateChannel;
         }
         class Client
         {

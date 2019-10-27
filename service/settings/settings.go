@@ -4,6 +4,7 @@ type Settings struct {
 	Configuration    string
 	ReportDeviceName bool
 	CheckUpdates     bool
+	UpdateChannel    string
 }
 
 func FromMap(m map[string]interface{}) Settings {
@@ -15,7 +16,10 @@ func FromMap(m map[string]interface{}) Settings {
 		s.ReportDeviceName = v
 	}
 	if v, ok := m["checkUpdates"].(bool); ok {
-		s.CheckUpdates = !v
+		s.CheckUpdates = v
+	}
+	if v, ok := m["updateChannel"].(string); ok {
+		s.UpdateChannel = v
 	}
 	return s
 }
