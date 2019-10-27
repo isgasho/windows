@@ -337,3 +337,7 @@ ASALocalRun/
 
 # BeatPulse healthcheck temp database
 healthchecksdb
+service/bin
+NextDNSSetup-*.exe
+gui/bin/
+dnsunleak/bin/
