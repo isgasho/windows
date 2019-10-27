@@ -13,12 +13,13 @@ namespace NextDNS
         public SettingsForm()
         {
             service = new Service.Client();
-            service.EventReceived += Service_EventReceived;
-            service.Connected += Service_Connected;
-            Properties.Settings.Default.SettingsSaving += Default_SettingsSaving;
 
             InitializeComponent();
             Hide();
+
+            service.EventReceived += Service_EventReceived;
+            service.Connected += Service_Connected;
+            Properties.Settings.Default.SettingsSaving += Default_SettingsSaving;
 
             configuration.Text = Properties.Settings.Default.Configuration;
             reportDeviceName.Checked = Properties.Settings.Default.ReportDeviceName;

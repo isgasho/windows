@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"hash/crc64"
@@ -10,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+	"time"
 
 	"github.com/denisbrodbeck/machineid"
 	"github.com/kardianos/service"
@@ -140,6 +142,13 @@ func main() {
 					var err error
 					switch e.Name {
 					case "enable":
+						go func() {
+							ctx, cancel := context.WithTimeout(context.Background(), 1*time.Minute)
+							defer cancel()
+							if err := p.router.Test(ctx); err != nil {
+								p.ErrorLog(fmt.Errorf("router: %v", err))
+							}
+						}()
 						err = p.Proxy.Start()
 					case "disable":
 						err = p.Proxy.Stop()
