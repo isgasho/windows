@@ -85,6 +85,8 @@ func main() {
 	p = &proxySvc{
 		proxy.Proxy{
 			Upstream: upstreamBase,
+			// Bootstrap with a fake transport that avoid DNS lookup
+			Transport: endpoint.NewTransport(endpoint.New("dns.nextdns.io", "", "45.90.28.0")),
 			OnStateChange: func() {
 				status, _ := p.Proxy.Started()
 				_ = p.ctl.Broadcast(ctl.Event{
