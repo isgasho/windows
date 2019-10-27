@@ -12,7 +12,7 @@ func FromMap(m map[string]interface{}) Settings {
 		s.Configuration = v
 	}
 	if v, ok := m["reportDeviceName"].(bool); ok {
-		s.ReportDeviceName = !v
+		s.ReportDeviceName = v
 	}
 	if v, ok := m["checkUpdates"].(bool); ok {
 		s.CheckUpdates = !v

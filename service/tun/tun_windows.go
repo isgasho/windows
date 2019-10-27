@@ -3,8 +3,6 @@ package tun
 import (
 	"bytes"
 	"encoding/binary"
-
-	// "encoding/hex"
 	"errors"
 	"fmt"
 	"io"

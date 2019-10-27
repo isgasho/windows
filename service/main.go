@@ -3,10 +3,12 @@ package main
 import (
 	"flag"
 	"fmt"
+	"hash/crc64"
 	stdlog "log"
 	"math/rand"
 	"net/http"
 	"os"
+	"os/exec"
 	"strings"
 
 	"github.com/denisbrodbeck/machineid"
@@ -41,13 +43,39 @@ func (p *proxySvc) Stop(s service.Service) error {
 	return p.ctl.Stop()
 }
 
+func getModel() (string, error) {
+	cmd := exec.Command("wmic", "computersystem", "get", "model")
+	b, err := cmd.Output()
+	if err != nil {
+		return "", err
+	}
+	// Remove Model\r\n prefix.
+	for len(b) > 0 {
+		if b[0] == '\n' {
+			return strings.TrimSpace(string(b[1:])), nil
+		}
+		b = b[1:]
+	}
+	return "", nil
+}
+
+func getShortMachineID() (string, error) {
+	uuid, err := machineid.ID()
+	if err != nil {
+		return "", err
+	}
+	sum := crc64.Checksum([]byte(uuid), crc64.MakeTable(crc64.ISO))
+	return fmt.Sprintf("%x", sum)[:5], err
+}
+
 func main() {
 	stdlog.SetOutput(os.Stdout)
 	svcFlag := flag.String("service", "", fmt.Sprintf("Control the system service.\nValid actions: %s", strings.Join(service.ControlAction[:], ", ")))
 	flag.Parse()
 
+	model, _ := getModel()
 	hostname, _ := os.Hostname()
-	machinID, _ := machineid.ID()
+	hostID, _ := getShortMachineID()
 
 	up := &updater.Updater{
 		URL: "https://storage.googleapis.com/nextdns_windows/info.json",
@@ -135,9 +163,12 @@ func main() {
 						s := settings.FromMap(e.Data)
 						p.Upstream = upstreamBase + s.Configuration
 						if s.ReportDeviceName {
+							p.InfoLog(fmt.Sprintf("Reporting device name: %s / %s / %s", model, hostname, hostID))
+							p.Model = model
 							p.Hostname = hostname
-							p.HostID = machinID
+							p.HostID = hostID
 						} else {
+							p.Model = ""
 							p.Hostname = ""
 							p.HostID = ""
 						}
@@ -171,9 +202,9 @@ func main() {
 			}
 		}
 	}()
-	p.QueryLog = func(msgID uint16, qname string) {
-		_ = log.Infof("resolve %x %s", msgID, qname)
-	}
+	// p.QueryLog = func(msgID uint16, qname string) {
+	// 	_ = log.Infof("resolve %x %s", msgID, qname)
+	// }
 	p.InfoLog = func(msg string) {
 		_ = log.Info(msg)
 	}
