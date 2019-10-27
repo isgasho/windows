@@ -13,9 +13,10 @@
 ${StrLoc}
 
 Name NextDNS
+BrandingText "NextDNS Inc"
 !define VERSIONMAJOR 1
 !define VERSIONMINOR 0
-!define VERSIONBUILD 2
+!define VERSIONBUILD 3
 !define MUI_PRODUCT "NextDNS"
 !define MUI_FILE "NextDNS"
 !define MUI_VERSION "${VERSIONMAJOR}.${VERSIONMINOR}.${VERSIONBUILD}" 
@@ -34,8 +35,8 @@ InstallDir "$PROGRAMFILES\${MUI_PRODUCT}"
 ;Get installation folder from registry if available
 InstallDirRegKey HKCU "Software\${MUI_PRODUCT}" ""
 
-ShowInstDetails show
-ShowUninstDetails show
+;ShowInstDetails show
+;ShowUninstDetails show
 
 Function .onInit
   !insertmacro MULTIUSER_INIT
