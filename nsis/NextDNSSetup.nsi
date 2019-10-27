@@ -202,8 +202,9 @@ Section "Uninstall"
   Pop $R0
   DetailPrint "Uninstall: $R0"
 
-  RMDir /r "$INSTDIR\*.*"
-  RMDir "$INSTDIR"
+  Sleep 1000
+
+  RMDir /r /rebootok "$INSTDIR"
  
   ; Remove from start menu
   SetShellVarContext all
