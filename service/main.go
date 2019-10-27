@@ -34,10 +34,14 @@ type proxySvc struct {
 }
 
 func (p *proxySvc) Start(s service.Service) error {
+	log.Info("Service starting")
+	defer log.Info("Service started")
 	return p.ctl.Start()
 }
 
 func (p *proxySvc) Stop(s service.Service) error {
+	log.Info("Service stopping")
+	defer log.Info("Service stopped")
 	err := p.Proxy.Stop()
 	if err != nil {
 		return err
@@ -90,11 +94,10 @@ func main() {
 			// Bootstrap with a fake transport that avoid DNS lookup
 			Transport: endpoint.NewTransport(endpoint.New("dns.nextdns.io", "", "45.90.28.0")),
 			OnStateChange: func() {
-				status, _ := p.Proxy.Started()
 				_ = p.ctl.Broadcast(ctl.Event{
 					Name: "status",
 					Data: map[string]interface{}{
-						"enabled": status,
+						"enabled": p.Proxy.Started(),
 					},
 				})
 			},
@@ -138,52 +141,58 @@ func main() {
 					// Use to open the GUI window in the existing instance of
 					// the app when a duplicate instance is open.
 					_ = p.ctl.Broadcast(ctl.Event{Name: "open"})
-				case "enable", "disable":
+				case "settings":
+					if e.Data == nil {
+						return
+					}
+					// Apply settings
+					s := settings.FromMap(e.Data)
+					p.Upstream = upstreamBase + s.Configuration
+					if s.ReportDeviceName {
+						p.InfoLog(fmt.Sprintf("Reporting device name: %s / %s / %s", model, hostname, hostID))
+						p.Model = model
+						p.Hostname = hostname
+						p.HostID = hostID
+					} else {
+						p.Model = ""
+						p.Hostname = ""
+						p.HostID = ""
+					}
+					up.SetAutoRun(s.CheckUpdates)
+
+					// Switch connection status
 					var err error
-					switch e.Name {
-					case "enable":
-						go func() {
-							ctx, cancel := context.WithTimeout(context.Background(), 1*time.Minute)
-							defer cancel()
-							if err := p.router.Test(ctx); err != nil {
-								p.ErrorLog(fmt.Errorf("router: %v", err))
-							}
-						}()
-						err = p.Proxy.Start()
-					case "disable":
+					if s.Enabled {
+						if !p.Proxy.Started() {
+							go func() {
+								ctx, cancel := context.WithTimeout(context.Background(), 1*time.Minute)
+								defer cancel()
+								if err := p.router.Test(ctx); err != nil {
+									p.ErrorLog(fmt.Errorf("router: %v", err))
+								}
+							}()
+							err = p.Proxy.Start()
+						}
+					} else {
 						err = p.Proxy.Stop()
 					}
 					if err != nil {
+						p.ErrorLog(fmt.Errorf("proxy: %v", err))
 						_ = p.ctl.Broadcast(ctl.Event{
 							Name: "error",
 							Data: map[string]interface{}{
 								"error": err.Error(),
 							},
 						})
-					}
-				case "status":
-					status, _ := p.Proxy.Started()
-					_ = p.ctl.Broadcast(ctl.Event{
-						Name: "status",
-						Data: map[string]interface{}{
-							"enabled": status,
-						},
-					})
-				case "settings":
-					if e.Data != nil {
-						s := settings.FromMap(e.Data)
-						p.Upstream = upstreamBase + s.Configuration
-						if s.ReportDeviceName {
-							p.InfoLog(fmt.Sprintf("Reporting device name: %s / %s / %s", model, hostname, hostID))
-							p.Model = model
-							p.Hostname = hostname
-							p.HostID = hostID
-						} else {
-							p.Model = ""
-							p.Hostname = ""
-							p.HostID = ""
-						}
-						up.SetAutoRun(s.CheckUpdates)
+					} else {
+						status := p.Started()
+						p.InfoLog(fmt.Sprintf("sending status: %v", status))
+						_ = p.ctl.Broadcast(ctl.Event{
+							Name: "status",
+							Data: map[string]interface{}{
+								"enabled": status,
+							},
+						})
 					}
 				default:
 					p.ErrorLog(fmt.Errorf("invalid event: %v", e))

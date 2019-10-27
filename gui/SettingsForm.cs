@@ -1,6 +1,7 @@
 ﻿using System;
 using System.ComponentModel;
 using System.Diagnostics;
+using System.Threading.Tasks;
 using System.Windows.Forms;
 
 namespace NextDNS
@@ -12,14 +13,14 @@ namespace NextDNS
 
         public SettingsForm()
         {
-            service = new Service.Client();
-
             InitializeComponent();
             Hide();
 
+            service = new Service.Client();
             service.EventReceived += Service_EventReceived;
             service.Connected += Service_Connected;
             Properties.Settings.Default.SettingsSaving += Default_SettingsSaving;
+            service.Connect();
 
             configuration.Text = Properties.Settings.Default.Configuration;
             reportDeviceName.Checked = Properties.Settings.Default.ReportDeviceName;
@@ -35,24 +36,6 @@ namespace NextDNS
         async private void Service_Connected(object sender, EventArgs e)
         {
             sendSettings();
-
-            try
-            {
-                if (Properties.Settings.Default.Enabled)
-                {
-                    // If enabled, auto-connect on start
-                    await service.SendAsync(new Service.Event("enable")).ConfigureAwait(false);
-                }
-                else
-                {
-                    // Update status
-                    await service.SendAsync(new Service.Event("status")).ConfigureAwait(false);
-                }
-            }
-            catch (Exception)
-            {
-                // Silient failure on startup
-            }
         }
 
         private void Default_SettingsSaving(object sender, CancelEventArgs e)
@@ -64,6 +47,7 @@ namespace NextDNS
         {
             var settings = new Service.Event("settings");
             settings.data = new Service.EventData();
+            settings.data.enabled = Properties.Settings.Default.Enabled;
             settings.data.configuration = Properties.Settings.Default.Configuration;
             settings.data.reportDeviceName = Properties.Settings.Default.ReportDeviceName;
             settings.data.checkUpdates = Properties.Settings.Default.CheckUpdates;
@@ -99,6 +83,8 @@ namespace NextDNS
                     Debug.WriteLine("status {0}", (object)(e.data.enabled ? "enabled" : "disabled"));
                     enabled = e.data.enabled;
                     toggle.Text = enabled ? "Disable" : "Enable";
+                    toggleCheckbox.Checked = enabled;
+                    status.Text = enabled ? "Connected" : "Disconnected";
                     break;
                 case "error":
                     MessageBox.Show(e.data.error, "NextDNS Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
@@ -126,6 +112,12 @@ namespace NextDNS
             Properties.Settings.Default.ReportDeviceName = reportDeviceName.Checked;
             Properties.Settings.Default.CheckUpdates = checkUpdate.Checked;
             Properties.Settings.Default.UpdateChannel = updateChannel.SelectedIndex == 0 ? "Stable" : "Beta";
+
+            if (Properties.Settings.Default.Configuration.Length > 0 && !Properties.Settings.Default.Enabled)
+            {
+                Properties.Settings.Default.Enabled = true;
+            }
+
             Properties.Settings.Default.Save();
         }
 
@@ -140,21 +132,10 @@ namespace NextDNS
             WindowState = FormWindowState.Normal;
         }
 
-        async private void toggle_Click(object sender, EventArgs e)
+        private void toggle_Click(object sender, EventArgs e)
         {
-            try
-            {
-                Properties.Settings.Default.Enabled = !enabled; // Store the intent
-                Properties.Settings.Default.Save();
-                await service.SendAsync(new Service.Event(enabled ? "disable" : "enable")).ConfigureAwait(false);
-            }
-            catch (Exception ex)
-            {
-                Debug.WriteLine("Service broadcast error: {0}", (object)ex.Message);
-                MessageBox.Show("An error append while trying to communicate with NextDNS Windows service.",
-                    "Service Communication Error", 
-                    MessageBoxButtons.OK, MessageBoxIcon.Error);
-            }
+            Properties.Settings.Default.Enabled = !enabled; // Store the intent
+            Properties.Settings.Default.Save();
         }
 
         async private void quit_Click(object sender, EventArgs e)
@@ -163,8 +144,11 @@ namespace NextDNS
             {
                 try
                 {
-                    // Disconnect on exit
-                    await service.SendAsync(new Service.Event("disable")).ConfigureAwait(false);
+                    // Disconnect set flush settings on exit
+                    var settings = new Service.Event("settings");
+                    settings.data = new Service.EventData();
+                    settings.data.enabled = false;
+                    await service.SendAsync(settings).ConfigureAwait(false);
                 }
                 catch (Exception)
                 {
@@ -178,6 +162,12 @@ namespace NextDNS
         private void checkUpdate_CheckedChanged(object sender, EventArgs e)
         {
             updateChannel.Enabled = checkUpdate.Checked;
+        }
+
+        private void systray_MouseDoubleClick(object sender, MouseEventArgs e)
+        {
+            Show();
+            WindowState = FormWindowState.Normal;
         }
     }
 }

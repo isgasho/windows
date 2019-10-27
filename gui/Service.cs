@@ -52,11 +52,6 @@ namespace NextDNS
             public event EventHandler<Event> EventReceived;
             public event EventHandler Connected;
 
-            public Client()
-            {
-                Connect();
-            }
-
             ~Client()
             {
                 pipe.WaitForPipeDrain();
@@ -65,7 +60,7 @@ namespace NextDNS
                 pipe = null;
             }
 
-            async private void Connect()
+            async public void Connect()
             {
                 if (pipe != null)
                 {

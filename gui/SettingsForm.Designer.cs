@@ -45,8 +45,12 @@
             this.reportDeviceName = new System.Windows.Forms.CheckBox();
             this.save = new System.Windows.Forms.Button();
             this.cancel = new System.Windows.Forms.Button();
+            this.toggleCheckbox = new System.Windows.Forms.CheckBox();
+            this.status = new System.Windows.Forms.Label();
+            this.statusGroupBox = new System.Windows.Forms.GroupBox();
             this.systrayContextMenu.SuspendLayout();
             this.generalGroupBox.SuspendLayout();
+            this.statusGroupBox.SuspendLayout();
             this.SuspendLayout();
             // 
             // systray
@@ -55,6 +59,7 @@
             this.systray.Icon = ((System.Drawing.Icon)(resources.GetObject("systray.Icon")));
             this.systray.Text = "NextDNS";
             this.systray.Visible = true;
+            this.systray.MouseDoubleClick += new System.Windows.Forms.MouseEventHandler(this.systray_MouseDoubleClick);
             // 
             // systrayContextMenu
             // 
@@ -128,7 +133,7 @@
             this.generalGroupBox.Size = new System.Drawing.Size(712, 335);
             this.generalGroupBox.TabIndex = 3;
             this.generalGroupBox.TabStop = false;
-            this.generalGroupBox.Text = "General";
+            this.generalGroupBox.Text = "Configuration";
             // 
             // updateChannelLabel
             // 
@@ -175,7 +180,7 @@
             // 
             // save
             // 
-            this.save.Location = new System.Drawing.Point(574, 405);
+            this.save.Location = new System.Drawing.Point(574, 550);
             this.save.Margin = new System.Windows.Forms.Padding(6);
             this.save.Name = "save";
             this.save.Size = new System.Drawing.Size(150, 44);
@@ -187,7 +192,7 @@
             // cancel
             // 
             this.cancel.DialogResult = System.Windows.Forms.DialogResult.Cancel;
-            this.cancel.Location = new System.Drawing.Point(412, 405);
+            this.cancel.Location = new System.Drawing.Point(412, 550);
             this.cancel.Margin = new System.Windows.Forms.Padding(6);
             this.cancel.Name = "cancel";
             this.cancel.Size = new System.Drawing.Size(150, 44);
@@ -196,13 +201,45 @@
             this.cancel.UseVisualStyleBackColor = true;
             this.cancel.Click += new System.EventHandler(this.cancel_Click);
             // 
+            // toggleCheckbox
+            // 
+            this.toggleCheckbox.AutoSize = true;
+            this.toggleCheckbox.Location = new System.Drawing.Point(96, 71);
+            this.toggleCheckbox.Name = "toggleCheckbox";
+            this.toggleCheckbox.Size = new System.Drawing.Size(111, 29);
+            this.toggleCheckbox.TabIndex = 7;
+            this.toggleCheckbox.Text = "Enable";
+            this.toggleCheckbox.UseVisualStyleBackColor = true;
+            this.toggleCheckbox.CheckedChanged += new System.EventHandler(this.toggle_Click);
+            // 
+            // status
+            // 
+            this.status.AutoSize = true;
+            this.status.Location = new System.Drawing.Point(394, 71);
+            this.status.Name = "status";
+            this.status.Size = new System.Drawing.Size(143, 25);
+            this.status.TabIndex = 8;
+            this.status.Text = "Disconnected";
+            // 
+            // statusGroupBox
+            // 
+            this.statusGroupBox.Controls.Add(this.toggleCheckbox);
+            this.statusGroupBox.Controls.Add(this.status);
+            this.statusGroupBox.Location = new System.Drawing.Point(13, 355);
+            this.statusGroupBox.Name = "statusGroupBox";
+            this.statusGroupBox.Size = new System.Drawing.Size(711, 147);
+            this.statusGroupBox.TabIndex = 9;
+            this.statusGroupBox.TabStop = false;
+            this.statusGroupBox.Text = "Status";
+            // 
             // SettingsForm
             // 
             this.AcceptButton = this.save;
             this.AutoScaleDimensions = new System.Drawing.SizeF(12F, 25F);
             this.AutoScaleMode = System.Windows.Forms.AutoScaleMode.Font;
             this.CancelButton = this.cancel;
-            this.ClientSize = new System.Drawing.Size(736, 463);
+            this.ClientSize = new System.Drawing.Size(736, 609);
+            this.Controls.Add(this.statusGroupBox);
             this.Controls.Add(this.cancel);
             this.Controls.Add(this.save);
             this.Controls.Add(this.generalGroupBox);
@@ -215,6 +252,8 @@
             this.systrayContextMenu.ResumeLayout(false);
             this.generalGroupBox.ResumeLayout(false);
             this.generalGroupBox.PerformLayout();
+            this.statusGroupBox.ResumeLayout(false);
+            this.statusGroupBox.PerformLayout();
             this.ResumeLayout(false);
 
         }
@@ -236,6 +275,9 @@
         private System.Windows.Forms.CheckBox checkUpdate;
         private System.Windows.Forms.ComboBox updateChannel;
         private System.Windows.Forms.Label updateChannelLabel;
+        private System.Windows.Forms.CheckBox toggleCheckbox;
+        private System.Windows.Forms.Label status;
+        private System.Windows.Forms.GroupBox statusGroupBox;
     }
 }
 

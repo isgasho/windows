@@ -1,6 +1,7 @@
 package settings
 
 type Settings struct {
+	Enabled          bool
 	Configuration    string
 	ReportDeviceName bool
 	CheckUpdates     bool
@@ -9,6 +10,9 @@ type Settings struct {
 
 func FromMap(m map[string]interface{}) Settings {
 	var s Settings
+	if v, ok := m["enabled"].(bool); ok {
+		s.Enabled = v
+	}
 	if v, ok := m["configuration"].(string); ok {
 		s.Configuration = v
 	}

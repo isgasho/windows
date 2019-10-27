@@ -42,11 +42,14 @@ type Proxy struct {
 	dedup dedup
 }
 
-func (p *Proxy) Started() (bool, error) {
-	return p.tun != nil, nil
+func (p *Proxy) Started() bool {
+	return p.tun != nil
 }
 
 func (p *Proxy) Start() (err error) {
+	if p.tun != nil {
+		return
+	}
 	if p.tun, err = tun.OpenTunDevice("tun0", "192.0.2.43", "192.0.2.42", "255.255.255.0", []string{"192.0.2.42"}); err != nil {
 		return err
 	}

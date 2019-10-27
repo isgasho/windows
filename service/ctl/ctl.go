@@ -75,7 +75,7 @@ func (s *Server) handleEvents(c net.Conn) {
 			break
 		}
 		if s.Handler != nil {
-			s.Handler.HandleEvent(e)
+			go s.Handler.HandleEvent(e)
 		}
 	}
 }
