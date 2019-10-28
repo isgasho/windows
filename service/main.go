@@ -42,36 +42,10 @@ func (p *proxySvc) Start(s service.Service) error {
 func (p *proxySvc) Stop(s service.Service) error {
 	log.Info("Service stopping")
 	defer log.Info("Service stopped")
-	err := p.Proxy.Stop()
-	if err != nil {
+	if err := p.Proxy.Stop(); err != nil {
 		return err
 	}
 	return p.ctl.Stop()
-}
-
-func getModel() (string, error) {
-	cmd := exec.Command("wmic", "computersystem", "get", "model")
-	b, err := cmd.Output()
-	if err != nil {
-		return "", err
-	}
-	// Remove Model\r\n prefix.
-	for len(b) > 0 {
-		if b[0] == '\n' {
-			return strings.TrimSpace(string(b[1:])), nil
-		}
-		b = b[1:]
-	}
-	return "", nil
-}
-
-func getShortMachineID() (string, error) {
-	uuid, err := machineid.ID()
-	if err != nil {
-		return "", err
-	}
-	sum := crc64.Checksum([]byte(uuid), crc64.MakeTable(crc64.ISO))
-	return fmt.Sprintf("%x", sum)[:5], err
 }
 
 func main() {
@@ -79,27 +53,43 @@ func main() {
 	svcFlag := flag.String("service", "", fmt.Sprintf("Control the system service.\nValid actions: %s", strings.Join(service.ControlAction[:], ", ")))
 	flag.Parse()
 
-	model, _ := getModel()
-	hostname, _ := os.Hostname()
-	hostID, _ := getShortMachineID()
+	hdrs := http.Header{}
+	vers := updater.CurrentVersion()
+	if vers == "" {
+		vers = "dev"
+	}
+	hdrs.Set("User-Agent", "nextdns-windows/"+vers)
+
+	reportHdr := hdrs.Clone()
+	if model := getModel(); model != "" {
+		reportHdr.Set("X-Device-Model", model)
+	}
+	if hostname := getHostname(); hostname != "" {
+		reportHdr.Set("X-Device-Name", hostname)
+	}
+	if hostID := getShortMachineID(); hostID != "" {
+		reportHdr.Set("X-Device-Id", hostID)
+	}
 
 	up := &updater.Updater{
 		URL: "https://storage.googleapis.com/nextdns_windows/info.json",
 	}
 
 	var p *proxySvc
+	broadcast := func(name string, data map[string]interface{}) {
+		log.Infof("send event: %v %v", name, data)
+		if err := p.ctl.Broadcast(ctl.Event{Name: name, Data: data}); err != nil {
+			_ = log.Errorf("send event error: %v", err)
+		}
+	}
 	p = &proxySvc{
 		proxy.Proxy{
-			Upstream: upstreamBase,
+			Upstream:     upstreamBase,
+			ExtraHeaders: hdrs,
 			// Bootstrap with a fake transport that avoid DNS lookup
 			Transport: endpoint.NewTransport(endpoint.New("dns.nextdns.io", "", "45.90.28.0")),
-			OnStateChange: func() {
-				_ = p.ctl.Broadcast(ctl.Event{
-					Name: "status",
-					Data: map[string]interface{}{
-						"enabled": p.Proxy.Started(),
-					},
-				})
+			OnStateChange: func(started bool) {
+				broadcast("status", map[string]interface{}{"enabled": started})
 			},
 		},
 		endpoint.Manager{
@@ -140,7 +130,7 @@ func main() {
 				case "open":
 					// Use to open the GUI window in the existing instance of
 					// the app when a duplicate instance is open.
-					_ = p.ctl.Broadcast(ctl.Event{Name: "open"})
+					broadcast("open", nil)
 				case "settings":
 					if e.Data == nil {
 						return
@@ -149,14 +139,9 @@ func main() {
 					s := settings.FromMap(e.Data)
 					p.Upstream = upstreamBase + s.Configuration
 					if s.ReportDeviceName {
-						p.InfoLog(fmt.Sprintf("Reporting device name: %s / %s / %s", model, hostname, hostID))
-						p.Model = model
-						p.Hostname = hostname
-						p.HostID = hostID
+						p.ExtraHeaders = reportHdr
 					} else {
-						p.Model = ""
-						p.Hostname = ""
-						p.HostID = ""
+						p.ExtraHeaders = hdrs
 					}
 					up.SetAutoRun(s.CheckUpdates)
 
@@ -171,28 +156,18 @@ func main() {
 									p.ErrorLog(fmt.Errorf("router: %v", err))
 								}
 							}()
+							log.Info("Starting proxy")
 							err = p.Proxy.Start()
+						} else {
+							log.Info("Proxy already started")
 						}
 					} else {
+						log.Info("Stopping proxy")
 						err = p.Proxy.Stop()
 					}
 					if err != nil {
-						p.ErrorLog(fmt.Errorf("proxy: %v", err))
-						_ = p.ctl.Broadcast(ctl.Event{
-							Name: "error",
-							Data: map[string]interface{}{
-								"error": err.Error(),
-							},
-						})
-					} else {
-						status := p.Started()
-						p.InfoLog(fmt.Sprintf("sending status: %v", status))
-						_ = p.ctl.Broadcast(ctl.Event{
-							Name: "status",
-							Data: map[string]interface{}{
-								"enabled": status,
-							},
-						})
+						_ = log.Errorf("proxy: %v", err)
+						broadcast("error", map[string]interface{}{"error": err.Error()})
 					}
 				default:
 					p.ErrorLog(fmt.Errorf("invalid event: %v", e))
@@ -222,9 +197,9 @@ func main() {
 			}
 		}
 	}()
-	// p.QueryLog = func(msgID uint16, qname string) {
-	// 	_ = log.Infof("resolve %x %s", msgID, qname)
-	// }
+	p.QueryLog = func(msgID uint16, qname string) {
+		_ = log.Infof("resolve %x %s", msgID, qname)
+	}
 	p.InfoLog = func(msg string) {
 		_ = log.Info(msg)
 	}
@@ -250,4 +225,34 @@ func main() {
 	if err = s.Run(); err != nil {
 		_ = log.Error(err)
 	}
+}
+
+func getModel() string {
+	cmd := exec.Command("wmic", "computersystem", "get", "model")
+	b, err := cmd.Output()
+	if err != nil {
+		return ""
+	}
+	// Remove Model\r\n prefix.
+	for len(b) > 0 {
+		if b[0] == '\n' {
+			return strings.TrimSpace(string(b[1:]))
+		}
+		b = b[1:]
+	}
+	return ""
+}
+
+func getHostname() string {
+	h, _ := os.Hostname()
+	return h
+}
+
+func getShortMachineID() string {
+	uuid, err := machineid.ID()
+	if err != nil {
+		return ""
+	}
+	sum := crc64.Checksum([]byte(uuid), crc64.MakeTable(crc64.ISO))
+	return fmt.Sprintf("%x", sum)[:5]
 }

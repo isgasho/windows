@@ -17,22 +17,26 @@ namespace NextDNS
         [STAThread]
         static void Main()
         {
-            using (Mutex mutex = new Mutex(false, "Global\\NextDNS"))
+            try
             {
-                if (!mutex.WaitOne(0, false))
+                using (Mutex mutex = new Mutex(false, "Global\\NextDNS"))
                 {
-                    // Another instance of the app is already running. Instead of running, send
-                    // a message thru the service so the main app opens it's windows.
-                    var service = new Service.Client();
-                    service.SendAsync(new Service.Event("open")).GetAwaiter().GetResult();
-                    return;
+                    if (!mutex.WaitOne(0, false))
+                    {
+                        // Another instance of the app is already running. Instead of running, send
+                        // a message thru the service so the main app opens it's windows.
+                        var service = new Service.Client();
+                        service.SendAsync(new Service.Event("open")).GetAwaiter().GetResult();
+                        return;
+                    }
                 }
-
-                Application.EnableVisualStyles();
-                Application.SetCompatibleTextRenderingDefault(false);
-                settings = new SettingsForm();
-                Application.Run();
             }
+            catch (Exception) { }
+
+            Application.EnableVisualStyles();
+            Application.SetCompatibleTextRenderingDefault(false);
+            settings = new SettingsForm();
+            Application.Run();
         }
     }
 }

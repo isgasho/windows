@@ -45,7 +45,6 @@
             this.reportDeviceName = new System.Windows.Forms.CheckBox();
             this.save = new System.Windows.Forms.Button();
             this.cancel = new System.Windows.Forms.Button();
-            this.toggleCheckbox = new System.Windows.Forms.CheckBox();
             this.status = new System.Windows.Forms.Label();
             this.statusGroupBox = new System.Windows.Forms.GroupBox();
             this.systrayContextMenu.SuspendLayout();
@@ -201,21 +200,10 @@
             this.cancel.UseVisualStyleBackColor = true;
             this.cancel.Click += new System.EventHandler(this.cancel_Click);
             // 
-            // toggleCheckbox
-            // 
-            this.toggleCheckbox.AutoSize = true;
-            this.toggleCheckbox.Location = new System.Drawing.Point(96, 71);
-            this.toggleCheckbox.Name = "toggleCheckbox";
-            this.toggleCheckbox.Size = new System.Drawing.Size(111, 29);
-            this.toggleCheckbox.TabIndex = 7;
-            this.toggleCheckbox.Text = "Enable";
-            this.toggleCheckbox.UseVisualStyleBackColor = true;
-            this.toggleCheckbox.CheckedChanged += new System.EventHandler(this.toggle_Click);
-            // 
             // status
             // 
             this.status.AutoSize = true;
-            this.status.Location = new System.Drawing.Point(394, 71);
+            this.status.Location = new System.Drawing.Point(278, 69);
             this.status.Name = "status";
             this.status.Size = new System.Drawing.Size(143, 25);
             this.status.TabIndex = 8;
@@ -223,7 +211,6 @@
             // 
             // statusGroupBox
             // 
-            this.statusGroupBox.Controls.Add(this.toggleCheckbox);
             this.statusGroupBox.Controls.Add(this.status);
             this.statusGroupBox.Location = new System.Drawing.Point(13, 355);
             this.statusGroupBox.Name = "statusGroupBox";
@@ -275,7 +262,6 @@
         private System.Windows.Forms.CheckBox checkUpdate;
         private System.Windows.Forms.ComboBox updateChannel;
         private System.Windows.Forms.Label updateChannelLabel;
-        private System.Windows.Forms.CheckBox toggleCheckbox;
         private System.Windows.Forms.Label status;
         private System.Windows.Forms.GroupBox statusGroupBox;
     }

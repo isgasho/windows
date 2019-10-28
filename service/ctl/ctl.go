@@ -15,7 +15,9 @@ type Server struct {
 
 	Handler EventHandler
 
-	OnStart func()
+	OnStart      func()
+	OnConnect    func()
+	OnDisconnect func()
 
 	// ErrorLog specifies an optional log function for errors. If not set,
 	// errors are not reported.
@@ -63,15 +65,25 @@ func (s *Server) Broadcast(e Event) error {
 }
 
 func (s *Server) handleEvents(c net.Conn) {
+	if s.OnConnect != nil {
+		s.OnConnect()
+	}
 	s.addClient(c)
-	defer s.removeClient(c)
-	defer c.Close()
+	defer func() {
+		s.removeClient(c)
+		c.Close()
+		if s.OnDisconnect != nil {
+			s.OnDisconnect()
+		}
+	}()
 	dec := json.NewDecoder(c)
 	for {
 		var e Event
 		err := dec.Decode(&e)
 		if err != nil {
-			s.logErr(fmt.Errorf("decode event: %v", err))
+			if err != io.EOF {
+				s.logErr(fmt.Errorf("decode event: %v", err))
+			}
 			break
 		}
 		if s.Handler != nil {

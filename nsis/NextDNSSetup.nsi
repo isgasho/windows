@@ -117,9 +117,13 @@ SectionEnd
 
 Section "NextDNS Service"
   SetOutPath "$INSTDIR"
+  DetailPrint "Installing NextDNS Service..."
 
   ; Install service
   nsExec::ExecToLog '"${MUI_PRODUCT}Service.exe" -service stop'
+  ${nsProcess::KillProcess} "${MUI_PRODUCT}Service.exe" $R0
+  ${nsProcess::KillProcess} "dnsunleak.exe" $R0
+  ${nsProcess::Unload}
   Sleep 5000
   ${If} ${RunningX64}
     File "/oname=${MUI_PRODUCT}Service.exe" "..\service\bin\amd64\service.exe"
@@ -127,17 +131,13 @@ Section "NextDNS Service"
     File "/oname=${MUI_PRODUCT}Service.exe" "..\service\bin\i386\service.exe"
   ${EndIf}
   File "..\dnsunleak\bin\dnsunleak.exe"
-  DetailPrint "Installing NextDNS Service..."
   nsExec::ExecToLog /timeout=180000 '"${MUI_PRODUCT}Service.exe" -service install'
-  Pop $R0
-  DetailPrint "Install: $R0"
   nsExec::ExecToLog /timeout=180000 '"${MUI_PRODUCT}Service.exe" -service start'
-  Pop $R0
-  DetailPrint "Start: $R0"
 SectionEnd
  
 Section "NextDNS"
   SetOutPath "$INSTDIR"
+  DetailPrint "Installing NextDNS UI..."
 
   DetailPrint "Stopping NextDNS..."
   ${nsProcess::KillProcess} "${MUI_PRODUCT}.exe" $R0
@@ -191,17 +191,15 @@ SectionEnd
 Section "Uninstall"
   SetOutPath "$INSTDIR"
 
-  DetailPrint "Stopping NextDNS..."
+  DetailPrint "Stopping NextDNS UI..."
   ${nsProcess::KillProcess} "${MUI_PRODUCT}.exe" $R0
-  ${nsProcess::Unload}
 
   DetailPrint "Removing NextDNS Service..."
   nsExec::ExecToLog /timeout=180000 '"${MUI_PRODUCT}Service.exe" -service stop'
-  Pop $R0
-  DetailPrint "Stop: $R0"
+  ${nsProcess::KillProcess} "${MUI_PRODUCT}Service.exe" $R0
+  ${nsProcess::KillProcess} "dnsunleak.exe" $R0
+  ${nsProcess::Unload}
   nsExec::ExecToLog /timeout=180000 '"${MUI_PRODUCT}Service.exe" -service uninstall'
-  Pop $R0
-  DetailPrint "Uninstall: $R0"
 
   Sleep 1000
 

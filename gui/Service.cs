@@ -46,13 +46,13 @@ namespace NextDNS
             [DataMember]
             public string updateChannel;
         }
-        class Client
+        class Client : IDisposable
         {
             private NamedPipeClientStream pipe;
             public event EventHandler<Event> EventReceived;
             public event EventHandler Connected;
 
-            ~Client()
+            public void Dispose()
             {
                 pipe.WaitForPipeDrain();
                 pipe.Close();
@@ -65,7 +65,9 @@ namespace NextDNS
                 if (pipe != null)
                 {
                     pipe.Close();
+                    pipe.Dispose();
                 }
+                Debug.WriteLine("Connecting to service");
                 pipe = new NamedPipeClientStream(".", "NextDNS", PipeDirection.InOut, PipeOptions.Asynchronous);
                 while (true)
                 {

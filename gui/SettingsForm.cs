@@ -33,7 +33,7 @@ namespace NextDNS
             }
         }
 
-        async private void Service_Connected(object sender, EventArgs e)
+        private void Service_Connected(object sender, EventArgs e)
         {
             sendSettings();
         }
@@ -45,6 +45,12 @@ namespace NextDNS
 
         async private void sendSettings()
         {
+            if (InvokeRequired)
+            {
+                Invoke((MethodInvoker)delegate { sendSettings(); });
+                return;
+            }
+
             var settings = new Service.Event("settings");
             settings.data = new Service.EventData();
             settings.data.enabled = Properties.Settings.Default.Enabled;
@@ -83,7 +89,6 @@ namespace NextDNS
                     Debug.WriteLine("status {0}", (object)(e.data.enabled ? "enabled" : "disabled"));
                     enabled = e.data.enabled;
                     toggle.Text = enabled ? "Disable" : "Enable";
-                    toggleCheckbox.Checked = enabled;
                     status.Text = enabled ? "Connected" : "Disconnected";
                     break;
                 case "error":
@@ -134,7 +139,7 @@ namespace NextDNS
 
         private void toggle_Click(object sender, EventArgs e)
         {
-            Properties.Settings.Default.Enabled = !enabled; // Store the intent
+            Properties.Settings.Default.Enabled = !enabled;
             Properties.Settings.Default.Save();
         }
 

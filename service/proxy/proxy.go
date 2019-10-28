@@ -18,11 +18,10 @@ import (
 
 type Proxy struct {
 	Upstream string
-	Model    string
-	Hostname string
-	HostID   string
 
-	OnStateChange func()
+	ExtraHeaders http.Header
+
+	OnStateChange func(started bool)
 
 	// Transport is the http.RoundTripper used to perform DoH requests.
 	Transport http.RoundTripper
@@ -36,8 +35,8 @@ type Proxy struct {
 
 	InfoLog func(string)
 
-	mu  sync.Mutex
-	tun io.ReadWriteCloser
+	tun  io.ReadWriteCloser
+	stop chan struct{}
 
 	dedup dedup
 }
@@ -59,9 +58,13 @@ func (p *Proxy) Start() (err error) {
 
 func (p *Proxy) Stop() (err error) {
 	if p.tun != nil {
-		return p.tun.Close()
+		err = p.tun.Close()
+		p.tun = nil
 	}
-	return nil
+	if p.stop != nil {
+		close(p.stop)
+	}
+	return err
 }
 
 func (p *Proxy) logQuery(msgID uint16, qname string) {
@@ -83,12 +86,12 @@ func (p *Proxy) logErr(err error) {
 
 func (p *Proxy) run() {
 	if p.OnStateChange != nil {
-		p.OnStateChange()
+		p.OnStateChange(true)
 	}
 	defer func() {
 		p.tun = nil
 		if p.OnStateChange != nil {
-			p.OnStateChange()
+			p.OnStateChange(false)
 		}
 	}()
 
@@ -102,57 +105,101 @@ func (p *Proxy) run() {
 	}
 
 	// Start the loop handling UDP packets received on the tun interface.
+	const maxSize = 1500
 	bpool := sync.Pool{
 		New: func() interface{} {
-			b := make([]byte, 1500)
+			b := make([]byte, maxSize)
 			return &b
 		},
 	}
+	p.stop = make(chan struct{})
+	// Isolate the reads in a goroutine so we can decide to bail when p.stop is
+	// closed, even if tun.Read keeps blocking. This is to make sure we stop
+	// dnsunleak and not leave the user with no DNS. This certainly hides a bug
+	// in the tun library.
+	packetIn := make(chan []byte)
+	packetOut := make(chan []byte)
+	tun := p.tun
+	go func() {
+		defer close(packetIn)
+		for {
+			buf := *bpool.Get().(*[]byte)
+			n, err := tun.Read(buf[:maxSize]) // make sure we resize it to its max size
+			if err != nil {
+				if err != io.EOF {
+					p.logErr(fmt.Errorf("tun read err: %v", err))
+				}
+				return
+			}
+			packetIn <- buf[:n]
+		}
+	}()
+	go func() {
+		for {
+			var buf []byte
+			var more bool
+			select {
+			case buf, more = <-packetOut:
+				if !more {
+					return
+				}
+			case <-p.stop:
+				return
+			}
+			if _, err := tun.Write(buf); err != nil {
+				p.logErr(fmt.Errorf("tun write error: %v", err))
+				return
+			}
+			bpool.Put(&buf)
+		}
+	}()
+
 	dnsIP := []byte{192, 0, 2, 42}
 	for {
-		buf := *bpool.Get().(*[]byte)
-		qsize, err := p.tun.Read(buf)
-		if err != nil {
-			if err != io.EOF {
-				p.logErr(fmt.Errorf("tun read err: %v", err))
-			}
-			break
+		var buf []byte
+		select {
+		case buf = <-packetIn:
+		case <-p.stop:
+			return
 		}
+		qsize := len(buf)
 		if qsize <= 20 {
 			bpool.Put(&buf)
 			continue
 		}
 		if buf[9] != 17 {
 			// Not UDP
+			bpool.Put(&buf)
 			continue
 		}
 		if !bytes.Equal(buf[16:20], dnsIP) {
 			// Skip packet not directed to us.
+			bpool.Put(&buf)
 			continue
 		}
 		msgID := lazyMsgID(buf)
 		if p.dedup.IsDup(msgID) {
+			bpool.Put(&buf)
 			// Skip duplicated query.
 			continue
 		}
 		go func() {
-			defer bpool.Put(&buf)
 			qname := lazyQName(buf)
 			p.logQuery(msgID, qname)
-			res, err := p.resolve(buf[:qsize])
+			res, err := p.resolve(buf)
 			if err != nil {
 				p.logErr(fmt.Errorf("resolve: %x %v", msgID, err))
 				return
 			}
+			buf = buf[:maxSize] // reset buf size to it's underlaying size
 			rsize, err := readDNSResponse(res, buf)
 			if err != nil {
 				p.logErr(fmt.Errorf("readDNSResponse: %v", err))
 				return
 			}
-			p.mu.Lock()
-			defer p.mu.Unlock()
-			if _, err := p.tun.Write(buf[:rsize]); err != nil {
-				p.logErr(fmt.Errorf("tun write error: %v", err))
+			select {
+			case packetOut <- buf[:rsize]:
+			case <-p.stop:
 			}
 		}()
 	}
@@ -165,15 +212,24 @@ func (p *Proxy) unleak(ctx context.Context) error {
 	ex, _ := os.Executable()
 	dnsunleakPath := filepath.Join(filepath.Dir(ex), "dnsunleak.exe")
 	cmd := exec.CommandContext(ctx, dnsunleakPath)
-	r, w := io.Pipe()
-	cmd.Stdin = os.Stdin
-	cmd.Stdout = w
-	cmd.Stderr = w
+	stdout, stdoutW := io.Pipe()
+	stdinR, stdin := io.Pipe()
+	cmd.Stdin = stdinR
+	cmd.Stdout = stdoutW
+	cmd.Stderr = stdoutW
 	go func() {
-		s := bufio.NewScanner(r)
+		s := bufio.NewScanner(stdout)
 		for s.Scan() {
 			l := s.Text()
 			p.logInfo(fmt.Sprintf("dnsunleak: %s", l))
+		}
+	}()
+	go func() {
+		<-ctx.Done()
+		if proc := cmd.Process; proc != nil {
+			p.logInfo("Killing dnsunleak")
+			_, _ = stdin.Write([]byte{'\n'})
+			_ = proc.Kill()
 		}
 	}()
 	return cmd.Start()
@@ -185,14 +241,8 @@ func (p *Proxy) resolve(buf []byte) (io.ReadCloser, error) {
 		return nil, err
 	}
 	req.Header.Set("Content-Type", "application/dns-packet")
-	if p.Model != "" {
-		req.Header.Set("X-Device-Model", p.Model)
-	}
-	if p.Hostname != "" {
-		req.Header.Set("X-Device-Name", p.Hostname)
-	}
-	if p.HostID != "" {
-		req.Header.Set("X-Device-Id", p.HostID)
+	for name, hdrs := range p.ExtraHeaders {
+		req.Header[name] = hdrs
 	}
 	rt := p.Transport
 	if rt == nil {
