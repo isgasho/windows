@@ -3,17 +3,12 @@ package ctl
 import (
 	"net"
 
-	"golang.org/x/sys/windows"
-	"golang.zx2c4.com/wireguard/ipc/winpipe"
+	"github.com/Microsoft/go-winio"
 )
 
 func (s *Server) Start() error {
-	sec, err := windows.SecurityDescriptorFromString("O:SYD:P(A;;GA;;;WD)")
-	if err != nil {
-		return err
-	}
-	ln, err := winpipe.ListenPipe(`\\.\pipe\`+s.Namespace, &winpipe.PipeConfig{
-		SecurityDescriptor: sec,
+	ln, err := winio.ListenPipe(`\\.\pipe\`+s.Namespace, &winio.PipeConfig{
+		SecurityDescriptor: "O:SYD:P(A;;GA;;;WD)",
 	})
 	if err != nil {
 		return err
