@@ -5,7 +5,6 @@ import (
 	"flag"
 	"fmt"
 	"hash/crc64"
-	stdlog "log"
 	"math/rand"
 	"net/http"
 	"os"
@@ -14,32 +13,33 @@ import (
 	"time"
 
 	"github.com/denisbrodbeck/machineid"
-	"github.com/kardianos/service"
 	"github.com/nextdns/nextdns/endpoint"
 
 	"github.com/rs/nextdns-windows/ctl"
 	"github.com/rs/nextdns-windows/proxy"
 	"github.com/rs/nextdns-windows/settings"
+	"github.com/rs/nextdns-windows/svc"
 	"github.com/rs/nextdns-windows/updater"
 )
 
 const upstreamBase = "https://dns.nextdns.io/"
 
-var log service.Logger
-
 type proxySvc struct {
 	proxy.Proxy
 	router endpoint.Manager
 	ctl    ctl.Server
+	log    svc.Logger
 }
 
-func (p *proxySvc) Start(s service.Service) error {
+func (p *proxySvc) Start(log svc.Logger) error {
+	p.log = log
 	log.Info("Service starting")
 	defer log.Info("Service started")
 	return p.ctl.Start()
 }
 
-func (p *proxySvc) Stop(s service.Service) error {
+func (p *proxySvc) Stop(log svc.Logger) error {
+	p.log = log
 	log.Info("Service stopping")
 	defer log.Info("Service stopped")
 	if err := p.Proxy.Stop(); err != nil {
@@ -49,10 +49,35 @@ func (p *proxySvc) Stop(s service.Service) error {
 }
 
 func main() {
-	stdlog.SetOutput(os.Stdout)
-	svcFlag := flag.String("service", "", fmt.Sprintf("Control the system service.\nValid actions: %s", strings.Join(service.ControlAction[:], ", ")))
+	debug := flag.Bool("debug", false, "Enable debug mode")
+	svcFlag := flag.String("service", "", "Control the system service (actions: install, uninstall, start, stop)")
 	flag.Parse()
 
+	name := "NextDNSService"
+	displayName := "NextDNS Service"
+	desc := "NextDNS DNS53 to DoH proxy."
+
+	var err error
+	switch *svcFlag {
+	case "install":
+		err = svc.Install(name, displayName, desc)
+	case "uninstall", "remove":
+		err = svc.Remove(name)
+	case "start":
+		err = svc.Start(name)
+	case "stop":
+		err = svc.Stop(name)
+	case "":
+		err = run(*debug)
+	default:
+		fmt.Println("invalid service action")
+	}
+	if err != nil {
+		fmt.Println(err)
+	}
+}
+
+func run(debug bool) error {
 	hdrs := http.Header{}
 	vers := updater.CurrentVersion()
 	if vers == "" {
@@ -77,13 +102,13 @@ func main() {
 
 	var p *proxySvc
 	broadcast := func(name string, data map[string]interface{}) {
-		log.Infof("send event: %v %v", name, data)
+		p.log.Info(fmt.Sprintf("send event: %v %v", name, data))
 		if err := p.ctl.Broadcast(ctl.Event{Name: name, Data: data}); err != nil {
-			_ = log.Errorf("send event error: %v", err)
+			p.log.Error(fmt.Sprintf("send event error: %v", err))
 		}
 	}
 	p = &proxySvc{
-		proxy.Proxy{
+		Proxy: proxy.Proxy{
 			Upstream:     upstreamBase,
 			ExtraHeaders: hdrs,
 			// Bootstrap with a fake transport that avoid DNS lookup
@@ -92,7 +117,7 @@ func main() {
 				broadcast("status", map[string]interface{}{"enabled": started})
 			},
 		},
-		endpoint.Manager{
+		router: endpoint.Manager{
 			Providers: []endpoint.Provider{
 				// Prefer unicast routing.
 				endpoint.SourceURLProvider{
@@ -115,17 +140,17 @@ func main() {
 				endpoint.StaticProvider(endpoint.New("d1xovudkxbl47e.cloudfront.net", "", "")),
 			},
 			OnError: func(e endpoint.Endpoint, err error) {
-				_ = log.Warningf("Endpoint failed: %s: %v", e.Hostname, err)
+				p.log.Warn(fmt.Sprintf("Endpoint failed: %s: %v", e.Hostname, err))
 			},
 			OnChange: func(e endpoint.Endpoint, rt http.RoundTripper) {
-				_ = log.Infof("Switching endpoint: %s", e.Hostname)
+				p.log.Info(fmt.Sprintf("Switching endpoint: %s", e.Hostname))
 				p.Transport = rt
 			},
 		},
-		ctl.Server{
+		ctl: ctl.Server{
 			Namespace: "NextDNS",
 			Handler: ctl.EventHandlerFunc(func(e ctl.Event) {
-				_ = log.Infof("received event: %s %v", e.Name, e.Data)
+				p.log.Info(fmt.Sprintf("received event: %s %v", e.Name, e.Data))
 				switch e.Name {
 				case "open":
 					// Use to open the GUI window in the existing instance of
@@ -156,17 +181,17 @@ func main() {
 									p.ErrorLog(fmt.Errorf("router: %v", err))
 								}
 							}()
-							log.Info("Starting proxy")
+							p.log.Info("Starting proxy")
 							err = p.Proxy.Start()
 						} else {
-							log.Info("Proxy already started")
+							p.log.Info("Proxy already started")
 						}
 					} else {
-						log.Info("Stopping proxy")
+						p.log.Info("Stopping proxy")
 						err = p.Proxy.Stop()
 					}
 					if err != nil {
-						_ = log.Errorf("proxy: %v", err)
+						p.log.Error(fmt.Sprintf("proxy: %v", err))
 						broadcast("error", map[string]interface{}{"error": err.Error()})
 					}
 				default:
@@ -176,55 +201,26 @@ func main() {
 		},
 	}
 
-	svcConfig := &service.Config{
-		Name:        "NextDNSService",
-		DisplayName: "NextDNS Service",
-		Description: "NextDNS DNS53 to DoH proxy.",
-	}
-	s, err := service.New(p, svcConfig)
-	if err != nil {
-		stdlog.Fatal(err)
-	}
-	errs := make(chan error, 5)
-	if log, err = s.Logger(errs); err != nil {
-		stdlog.Fatal(err)
-	}
-	go func() {
-		for {
-			err := <-errs
-			if err != nil {
-				stdlog.Print(err)
-			}
-		}
-	}()
-	p.QueryLog = func(msgID uint16, qname string) {
-		_ = log.Infof("resolve %x %s", msgID, qname)
-	}
+	// p.QueryLog = func(msgID uint16, qname string) {
+	// 	p.log.Info(fmt.Sprintf("resolve %x %s", msgID, qname))
+	// }
 	p.InfoLog = func(msg string) {
-		_ = log.Info(msg)
+		p.log.Info(msg)
 	}
 	p.ErrorLog = func(err error) {
-		_ = log.Error(err)
+		p.log.Error(fmt.Sprint(err))
 	}
 	p.ctl.ErrorLog = func(err error) {
-		_ = log.Error(err)
+		p.log.Error(fmt.Sprint(err))
 	}
 	up.OnUpgrade = func(newVersion string) {
-		_ = log.Infof("upgrading from %s to %s", updater.CurrentVersion(), newVersion)
+		p.log.Info(fmt.Sprintf("upgrading from %s to %s", updater.CurrentVersion(), newVersion))
 	}
 	up.ErrorLog = func(err error) {
-		_ = log.Error(err)
+		p.log.Error(fmt.Sprint(err))
 	}
-	if len(*svcFlag) != 0 {
-		err := service.Control(s, *svcFlag)
-		if err != nil {
-			stdlog.Fatal(err)
-		}
-		return
-	}
-	if err = s.Run(); err != nil {
-		_ = log.Error(err)
-	}
+
+	return svc.Run(p, "NextDNSService", debug)
 }
 
 func getModel() string {
