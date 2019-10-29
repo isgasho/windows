@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"time"
 
 	tun "github.com/rs/nextdns-windows/tun"
 )
@@ -35,8 +36,10 @@ type Proxy struct {
 
 	InfoLog func(string)
 
-	tun  io.ReadWriteCloser
-	stop chan struct{}
+	mu      sync.Mutex
+	tun     io.ReadWriteCloser
+	started bool
+	stop    chan struct{}
 
 	dedup dedup
 }
@@ -46,9 +49,16 @@ func (p *Proxy) Started() bool {
 }
 
 func (p *Proxy) Start() (err error) {
-	if p.tun != nil {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.started {
 		return
 	}
+	p.started = true
+	return p.startLocked()
+}
+
+func (p *Proxy) startLocked() (err error) {
 	if p.tun, err = tun.OpenTunDevice("tun0", "192.0.2.43", "192.0.2.42", "255.255.255.0", []string{"192.0.2.42"}); err != nil {
 		return err
 	}
@@ -57,14 +67,34 @@ func (p *Proxy) Start() (err error) {
 }
 
 func (p *Proxy) Stop() (err error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.started = false
 	if p.tun != nil {
 		err = p.tun.Close()
 		p.tun = nil
 	}
 	if p.stop != nil {
 		close(p.stop)
+		p.stop = nil
 	}
 	return err
+}
+
+func (p *Proxy) restartIfNeeded() {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if !p.started {
+		return
+	}
+	for {
+		time.Sleep(5 * time.Second)
+		if err := p.startLocked(); err != nil {
+			p.logErr(fmt.Errorf("restart err: %v", err))
+			continue
+		}
+		break
+	}
 }
 
 func (p *Proxy) logQuery(msgID uint16, qname string) {
@@ -93,6 +123,7 @@ func (p *Proxy) run() {
 		if p.OnStateChange != nil {
 			p.OnStateChange(false)
 		}
+		p.restartIfNeeded()
 	}()
 
 	// Setup firewall rules to avoid DNS leaking.

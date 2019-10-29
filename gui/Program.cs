@@ -19,24 +19,35 @@ namespace NextDNS
         {
             try
             {
-                using (Mutex mutex = new Mutex(false, "Global\\NextDNS"))
+                using (Mutex mutex = new Mutex(false, "NextDNS"))
                 {
                     if (!mutex.WaitOne(0, false))
                     {
-                        // Another instance of the app is already running. Instead of running, send
-                        // a message thru the service so the main app opens it's windows.
-                        var service = new Service.Client();
-                        service.SendAsync(new Service.Event("open")).GetAwaiter().GetResult();
+                        openSettings();
                         return;
                     }
+
+                    Application.EnableVisualStyles();
+                    Application.SetCompatibleTextRenderingDefault(false);
+                    settings = new SettingsForm();
+                    Application.Run();
                 }
             }
-            catch (Exception) { }
+            catch (Exception)
+            {
+                openSettings();
+            }
+        }
 
-            Application.EnableVisualStyles();
-            Application.SetCompatibleTextRenderingDefault(false);
-            settings = new SettingsForm();
-            Application.Run();
+        static void openSettings()
+        {
+            // Another instance of the app is already running. Instead of running, send
+            // a message thru the service so the main app opens it's windows.
+            using (var service = new Service.Client())
+            {
+                service.Connect();
+                service.SendAsync(new Service.Event("open")).GetAwaiter().GetResult();
+            }
         }
     }
 }

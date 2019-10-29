@@ -242,7 +242,7 @@
             this.statusGroupBox.ResumeLayout(false);
             this.statusGroupBox.PerformLayout();
             this.ResumeLayout(false);
-
+            this.FormClosing += SettingsForm_FormClosing;
         }
 
         #endregion
