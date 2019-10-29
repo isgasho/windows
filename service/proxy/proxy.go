@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -15,6 +16,11 @@ import (
 	"time"
 
 	tun "github.com/rs/nextdns-windows/tun"
+)
+
+var (
+	ErrAlreadyStarted = errors.New("already started")
+	ErrAlreadyStopped = errors.New("already stopped")
 )
 
 type Proxy struct {
@@ -45,14 +51,16 @@ type Proxy struct {
 }
 
 func (p *Proxy) Started() bool {
-	return p.tun != nil
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.started
 }
 
 func (p *Proxy) Start() (err error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	if p.started {
-		return
+		return ErrAlreadyStarted
 	}
 	p.started = true
 	return p.startLocked()
@@ -69,6 +77,9 @@ func (p *Proxy) startLocked() (err error) {
 func (p *Proxy) Stop() (err error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
+	if !p.started {
+		return ErrAlreadyStopped
+	}
 	p.started = false
 	if p.tun != nil {
 		err = p.tun.Close()

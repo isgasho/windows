@@ -173,7 +173,9 @@ func run(debug bool) error {
 					// Switch connection status
 					var err error
 					if s.Enabled {
-						if !p.Proxy.Started() {
+						p.log.Info("Starting proxy")
+						err = p.Proxy.Start()
+						if err == nil {
 							go func() {
 								ctx, cancel := context.WithTimeout(context.Background(), 1*time.Minute)
 								defer cancel()
@@ -181,18 +183,20 @@ func run(debug bool) error {
 									p.ErrorLog(fmt.Errorf("router: %v", err))
 								}
 							}()
-							p.log.Info("Starting proxy")
-							err = p.Proxy.Start()
-						} else {
-							p.log.Info("Proxy already started")
 						}
 					} else {
 						p.log.Info("Stopping proxy")
 						err = p.Proxy.Stop()
 					}
 					if err != nil {
-						p.log.Error(fmt.Sprintf("proxy: %v", err))
-						broadcast("error", map[string]interface{}{"error": err.Error()})
+						if err == proxy.ErrAlreadyStarted || err == proxy.ErrAlreadyStopped {
+							// Make sure the UI gets a status update if we are
+							// already in the requested state.
+							broadcast("status", map[string]interface{}{"enabled": p.Proxy.Started()})
+						} else {
+							p.log.Error(fmt.Sprintf("proxy: %v", err))
+							broadcast("error", map[string]interface{}{"error": err.Error()})
+						}
 					}
 				default:
 					p.ErrorLog(fmt.Errorf("invalid event: %v", e))
