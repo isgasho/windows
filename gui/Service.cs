@@ -68,11 +68,11 @@ namespace NextDNS
                     pipe.Dispose();
                 }
                 Debug.WriteLine("Connecting to service");
-                pipe = new NamedPipeClientStream(".", "NextDNS", PipeDirection.InOut, PipeOptions.Asynchronous);
                 while (true)
                 {
                     try
                     {
+                        pipe = new NamedPipeClientStream(".", "NextDNS", PipeDirection.InOut, PipeOptions.Asynchronous);
                         await pipe.ConnectAsync(5000).ConfigureAwait(false);
                         break;
                     }

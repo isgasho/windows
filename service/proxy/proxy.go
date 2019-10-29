@@ -188,10 +188,14 @@ func (p *Proxy) run() {
 	dnsIP := []byte{192, 0, 2, 42}
 	for {
 		var buf []byte
+		var more bool
 		select {
-		case buf = <-packetIn:
+		case buf, more = <-packetIn:
 		case <-p.stop:
 			return
+		}
+		if !more {
+			break
 		}
 		qsize := len(buf)
 		if qsize <= 20 {
