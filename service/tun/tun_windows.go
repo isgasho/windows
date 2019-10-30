@@ -176,7 +176,7 @@ func OpenTunDevice(name, addr, gw, mask string, dns []string) (io.ReadWriteClose
 	netsh("interface", "ip", "set", "dns", TUNTAP_NAME, "dhcp")
 
 	// Set a v6 IP so windaube send AAAA queries
-	netsh("interface", "ipv6", "set", "address", "interface="+TUNTAP_NAME, "fd42:dead:beaf::", "store=active")
+	netsh("interface", "ipv6", "set", "address", "interface="+TUNTAP_NAME, "fd42:dead:beef::", "store=active")
 
 	// Open.
 	fd, err := windows.CreateFile(
