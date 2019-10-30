@@ -6,6 +6,7 @@ using System.Diagnostics;
 using System.Runtime.Serialization;
 using System.Runtime.Serialization.Json;
 using System.Threading.Tasks;
+using System.Threading;
 
 namespace NextDNS
 {
@@ -32,6 +33,9 @@ namespace NextDNS
             public bool enabled;
 
             [DataMember]
+            public string state;
+
+            [DataMember]
             public string error;
 
             [DataMember]
@@ -46,54 +50,47 @@ namespace NextDNS
             [DataMember]
             public string updateChannel;
         }
-        class Client : IDisposable
+        class Client
         {
-            private NamedPipeClientStream pipe;
+            private Thread thread;
             public event EventHandler<Event> EventReceived;
             public event EventHandler Connected;
 
-            public void Dispose()
+            public void Connect()
             {
-                pipe.WaitForPipeDrain();
-                pipe.Close();
-                pipe.Dispose();
-                pipe = null;
+                thread = new Thread(new ThreadStart(Run));
+                thread.Start();
             }
 
-            async public void Connect()
+            private void Run()
             {
-                if (pipe != null)
-                {
-                    pipe.Close();
-                    pipe.Dispose();
-                }
-                Debug.WriteLine("Connecting to service");
                 while (true)
                 {
-                    try
+                    Debug.WriteLine("Connecting to service");
+                    using (var pipe = new NamedPipeClientStream(".", "NextDNS", PipeDirection.In, PipeOptions.None))
                     {
-                        pipe = new NamedPipeClientStream(".", "NextDNS", PipeDirection.InOut, PipeOptions.Asynchronous);
-                        await pipe.ConnectAsync(5000).ConfigureAwait(false);
-                        break;
-                    }
-                    catch (Exception e)
-                    {
-                        Debug.WriteLine("NamedPipe connect: {0}", (object)e.Message);
-                        pipe.Close();
-                        await Task.Delay(5000).ConfigureAwait(false);
+                        try
+                        {
+                            pipe.Connect(5000);
+                            Connected?.Invoke(this, EventArgs.Empty);
+                            ReadLoop(pipe);
+                        }
+                        catch (Exception e)
+                        {
+                            Debug.WriteLine("NamedPipe connect: {0}", (object)e.Message);
+                            Thread.Sleep(500);
+                        }
                     }
                 }
-                StartReadingAsync();
-                Connected?.Invoke(this, EventArgs.Empty);
             }
 
-            async public void StartReadingAsync()
+            private void ReadLoop(NamedPipeClientStream pipe)
             {
                 var ser = new DataContractJsonSerializer(typeof(Event));
                 using (var r = new StreamReader(pipe))
                 {
                     string line;
-                    while ((line = await r.ReadLineAsync()) != null)
+                    while ((line = r.ReadLine()) != null)
                     {
                         using (var s = new MemoryStream(Encoding.UTF8.GetBytes(line)))
                         {
@@ -103,20 +100,23 @@ namespace NextDNS
                         }
                     }
                     Debug.WriteLine("Pipe was closed");
-                    Connect();
                 }
             }
 
-            public Task SendAsync(Event e)
+            async public Task SendAsync(Event e)
             {
                 Debug.WriteLine("Event sent: {0}", (object)e.name);
-                var ms = new MemoryStream();
-                var ser = new DataContractJsonSerializer(typeof(Event));
-                ser.WriteObject(ms, e);
-                ms.WriteByte(Convert.ToByte('\n'));
-                byte[] json = ms.ToArray();
-                ms.Close();
-                return pipe.WriteAsync(json, 0, json.Length);
+                using (var pipe = new NamedPipeClientStream(".", "NextDNS", PipeDirection.Out, PipeOptions.None))
+                {
+                    await pipe.ConnectAsync(1000).ConfigureAwait(false);
+                    var ms = new MemoryStream();
+                    var ser = new DataContractJsonSerializer(typeof(Event));
+                    ser.WriteObject(ms, e);
+                    ms.WriteByte(Convert.ToByte('\n'));
+                    byte[] json = ms.ToArray();
+                    ms.Close();
+                    await pipe.WriteAsync(json, 0, json.Length).ConfigureAwait(false);
+                }
             }
         }
     }

@@ -18,6 +18,16 @@ import (
 	tun "github.com/rs/nextdns-windows/tun"
 )
 
+type State string
+
+const (
+	StateStopped     State = "stopped"
+	StateStarting    State = "starting"
+	StateStarted     State = "started"
+	StateReasserting State = "reasserting"
+	StateStopping    State = "stopping"
+)
+
 var (
 	ErrAlreadyStarted = errors.New("already started")
 	ErrAlreadyStopped = errors.New("already stopped")
@@ -28,7 +38,7 @@ type Proxy struct {
 
 	ExtraHeaders http.Header
 
-	OnStateChange func(started bool)
+	OnStateChange func(State)
 
 	// Transport is the http.RoundTripper used to perform DoH requests.
 	Transport http.RoundTripper
@@ -42,27 +52,44 @@ type Proxy struct {
 
 	InfoLog func(string)
 
-	mu      sync.Mutex
-	tun     io.ReadWriteCloser
-	started bool
-	stop    chan struct{}
+	mu    sync.Mutex
+	tun   io.ReadWriteCloser
+	state State
+	stop  chan struct{}
 
 	dedup dedup
 }
 
-func (p *Proxy) Started() bool {
+func (p *Proxy) State() State {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	return p.started
+	return p.stateLocked()
+}
+
+func (p *Proxy) stateLocked() State {
+	if p.state == "" {
+		return StateStopped
+	}
+	return p.state
+}
+
+func (p *Proxy) setStateLocked(s State) {
+	if p.state == s {
+		return
+	}
+	p.state = s
+	if p.OnStateChange != nil {
+		p.OnStateChange(s)
+	}
 }
 
 func (p *Proxy) Start() (err error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	if p.started {
+	if p.stateLocked() != StateStopped {
 		return ErrAlreadyStarted
 	}
-	p.started = true
+	p.setStateLocked(StateStarting)
 	return p.startLocked()
 }
 
@@ -77,10 +104,11 @@ func (p *Proxy) startLocked() (err error) {
 func (p *Proxy) Stop() (err error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	if !p.started {
+	switch p.stateLocked() {
+	case StateStopped, StateStarting:
 		return ErrAlreadyStopped
 	}
-	p.started = false
+	p.setStateLocked(StateStopping)
 	if p.tun != nil {
 		err = p.tun.Close()
 		p.tun = nil
@@ -92,12 +120,18 @@ func (p *Proxy) Stop() (err error) {
 	return err
 }
 
-func (p *Proxy) restartIfNeeded() {
+func (p *Proxy) restartOrStop() {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	if !p.started {
+	switch p.stateLocked() {
+	case StateStopping:
+		p.setStateLocked(StateStopped)
+		return
+	case StateStopped:
+		// unexpected state
 		return
 	}
+	p.setStateLocked(StateReasserting)
 	for {
 		time.Sleep(5 * time.Second)
 		if err := p.startLocked(); err != nil {
@@ -105,6 +139,21 @@ func (p *Proxy) restartIfNeeded() {
 			continue
 		}
 		break
+	}
+}
+
+// doStart transitions to StateStarted. If the previous state wasn't
+// StateStarting or StateReassessing, no transition happens and false is
+// returned.
+func (p *Proxy) doStart() bool {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	switch p.stateLocked() {
+	case StateStarting, StateReasserting:
+		p.setStateLocked(StateStarted)
+		return true
+	default:
+		return false
 	}
 }
 
@@ -126,16 +175,7 @@ func (p *Proxy) logErr(err error) {
 }
 
 func (p *Proxy) run() {
-	if p.OnStateChange != nil {
-		p.OnStateChange(true)
-	}
-	defer func() {
-		p.tun = nil
-		if p.OnStateChange != nil {
-			p.OnStateChange(false)
-		}
-		p.restartIfNeeded()
-	}()
+	defer p.restartOrStop()
 
 	// Setup firewall rules to avoid DNS leaking.
 	// The process block forever and removes rules when killed.
@@ -162,8 +202,13 @@ func (p *Proxy) run() {
 	packetIn := make(chan []byte)
 	packetOut := make(chan []byte)
 	tun := p.tun
+	defer tun.Close()
 	go func() {
 		defer close(packetIn)
+		if !p.doStart() {
+			// Stop the start process
+			return
+		}
 		for {
 			buf := *bpool.Get().(*[]byte)
 			n, err := tun.Read(buf[:maxSize]) // make sure we resize it to its max size

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"hash/crc64"
 	"math/rand"
+	"net"
 	"net/http"
 	"os"
 	"os/exec"
@@ -113,8 +114,8 @@ func run(debug bool) error {
 			ExtraHeaders: hdrs,
 			// Bootstrap with a fake transport that avoid DNS lookup
 			Transport: endpoint.NewTransport(endpoint.New("dns.nextdns.io", "", "45.90.28.0")),
-			OnStateChange: func(started bool) {
-				broadcast("status", map[string]interface{}{"enabled": started})
+			OnStateChange: func(state proxy.State) {
+				broadcast("status", map[string]interface{}{"state": state})
 			},
 		},
 		router: endpoint.Manager{
@@ -149,6 +150,12 @@ func run(debug bool) error {
 		},
 		ctl: ctl.Server{
 			Namespace: "NextDNS",
+			OnConnect: func(c net.Conn) {
+				p.log.Info(fmt.Sprintf("UI Connect: %v", c))
+			},
+			OnDisconnect: func(c net.Conn) {
+				p.log.Info(fmt.Sprintf("UI Disconnect: %v", c))
+			},
 			Handler: ctl.EventHandlerFunc(func(e ctl.Event) {
 				p.log.Info(fmt.Sprintf("received event: %s %v", e.Name, e.Data))
 				switch e.Name {
@@ -189,14 +196,14 @@ func run(debug bool) error {
 						err = p.Proxy.Stop()
 					}
 					if err != nil {
-						if err == proxy.ErrAlreadyStarted || err == proxy.ErrAlreadyStopped {
-							// Make sure the UI gets a status update if we are
-							// already in the requested state.
-							broadcast("status", map[string]interface{}{"enabled": p.Proxy.Started()})
-						} else {
-							p.log.Error(fmt.Sprintf("proxy: %v", err))
-							broadcast("error", map[string]interface{}{"error": err.Error()})
+						var errStr string
+						if err != proxy.ErrAlreadyStarted && err != proxy.ErrAlreadyStopped {
+							errStr = err.Error()
 						}
+						broadcast("status", map[string]interface{}{
+							"state": p.Proxy.State(),
+							"error": errStr,
+						})
 					}
 				default:
 					p.ErrorLog(fmt.Errorf("invalid event: %v", e))

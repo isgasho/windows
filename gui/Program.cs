@@ -43,11 +43,8 @@ namespace NextDNS
         {
             // Another instance of the app is already running. Instead of running, send
             // a message thru the service so the main app opens it's windows.
-            using (var service = new Service.Client())
-            {
-                service.Connect();
-                service.SendAsync(new Service.Event("open")).GetAwaiter().GetResult();
-            }
+            var service = new Service.Client();
+            service.SendAsync(new Service.Event("open")).GetAwaiter().GetResult();
         }
     }
 }

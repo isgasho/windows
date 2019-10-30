@@ -8,8 +8,14 @@ namespace NextDNS
 {
     public partial class SettingsForm : Form
     {
+        private const string StateStopped = "stopped";
+        private const string StateStarting = "starting";
+        private const string StateStarted = "started";
+        private const string StateReasserting = "reasserting";
+        private const string StateStopping = "stopping";
+
         private Service.Client service;
-        private bool enabled = false; // Actual status
+        private string State = StateStopped; // Last known state
 
         public SettingsForm()
         {
@@ -86,13 +92,30 @@ namespace NextDNS
                     WindowState = FormWindowState.Normal;
                     break;
                 case "status":
-                    Debug.WriteLine("status {0}", (object)(e.data.enabled ? "enabled" : "disabled"));
-                    enabled = e.data.enabled;
-                    toggle.Text = enabled ? "Disable" : "Enable";
-                    status.Text = enabled ? "Connected" : "Disconnected";
-                    break;
-                case "error":
-                    MessageBox.Show(e.data.error, "NextDNS Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    Debug.WriteLine("state {0}", (object)e.data.state);
+                    State = e.data.state;
+                    switch (State)
+                    {
+                        case StateStopped:
+                            toggle.Text = "Enable";
+                            break;
+                        case StateStopping:
+                            toggle.Text = "Disonnecting...";
+                            break;
+                        case StateStarting:
+                        case StateReasserting:
+                            toggle.Text = "Connecting...";
+                            break;
+                        case StateStarted:
+                            toggle.Text = "Disable";
+                            break;
+
+                    }
+                    status.Text = State;
+                    if (e.data.error != null && e.data.error != "")
+                    {
+                        MessageBox.Show(e.data.error, "NextDNS Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    }
                     break;
                 default:
                     break;
@@ -139,13 +162,13 @@ namespace NextDNS
 
         private void toggle_Click(object sender, EventArgs e)
         {
-            Properties.Settings.Default.Enabled = !enabled;
+            Properties.Settings.Default.Enabled = State == StateStopped;
             Properties.Settings.Default.Save();
         }
 
         async private void quit_Click(object sender, EventArgs e)
         {
-            if (enabled)
+            if (State != StateStopped)
             {
                 try
                 {
