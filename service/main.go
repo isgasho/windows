@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"hash/crc64"
+	"log"
 	"math/rand"
 	"net"
 	"net/http"
@@ -230,8 +231,18 @@ func run(debug bool) error {
 	up.ErrorLog = func(err error) {
 		p.log.Error(fmt.Sprint(err))
 	}
+	log.SetOutput(writerFunc(func(b []byte) (n int, err error) {
+		p.log.Info(string(b))
+		return len(b), nil
+	}))
 
 	return svc.Run(p, "NextDNSService", debug)
+}
+
+type writerFunc func(p []byte) (n int, err error)
+
+func (w writerFunc) Write(p []byte) (n int, err error) {
+	return w(p)
 }
 
 func getModel() string {
