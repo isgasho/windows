@@ -1,7 +1,6 @@
 package main
 
 import (
-	"context"
 	"flag"
 	"fmt"
 	"hash/crc64"
@@ -15,7 +14,7 @@ import (
 	"time"
 
 	"github.com/denisbrodbeck/machineid"
-	"github.com/nextdns/nextdns/endpoint"
+	"github.com/nextdns/nextdns/resolver/endpoint"
 
 	"github.com/rs/nextdns-windows/ctl"
 	"github.com/rs/nextdns-windows/proxy"
@@ -28,9 +27,8 @@ const upstreamBase = "https://dns.nextdns.io/"
 
 type proxySvc struct {
 	proxy.Proxy
-	router endpoint.Manager
-	ctl    ctl.Server
-	log    svc.Logger
+	ctl ctl.Server
+	log svc.Logger
 }
 
 func (p *proxySvc) Start(log svc.Logger) error {
@@ -48,6 +46,48 @@ func (p *proxySvc) Stop(log svc.Logger) error {
 		return err
 	}
 	return p.ctl.Stop()
+}
+
+// nextdnsTransport returns a endpoint.Manager configured to connect to NextDNS
+// using different steering techniques.
+func (p *proxySvc) nextdnsTransport(hpm bool) http.RoundTripper {
+	var qs string
+	if hpm {
+		qs = "?hardened_privacy=1"
+	}
+	return &endpoint.Manager{
+		MinTestInterval: time.Second,
+		Providers: []endpoint.Provider{
+			// Prefer unicast routing.
+			&endpoint.SourceURLProvider{
+				SourceURL: "https://router.nextdns.io" + qs,
+				Client: &http.Client{
+					// Trick to avoid depending on DNS to contact the router API.
+					Transport: endpoint.MustNew(fmt.Sprintf("https://router.nextdns.io#%s", []string{
+						"216.239.32.21",
+						"216.239.34.21",
+						"216.239.36.21",
+						"216.239.38.21",
+					}[rand.Intn(3)])),
+				},
+			},
+			// Fallback on anycast.
+			endpoint.StaticProvider([]*endpoint.Endpoint{
+				endpoint.MustNew("https://dns1.nextdns.io#45.90.28.0"),
+				endpoint.MustNew("https://dns2.nextdns.io#45.90.30.0"),
+			}),
+			// Fallback on CDN fronting.
+			endpoint.StaticProvider([]*endpoint.Endpoint{
+				endpoint.MustNew("https://d1xovudkxbl47e.cloudfront.net"),
+			}),
+		},
+		OnError: func(e *endpoint.Endpoint, err error) {
+			p.log.Warn(fmt.Sprintf("Endpoint failed: %s: %v", e.Hostname, err))
+		},
+		OnChange: func(e *endpoint.Endpoint) {
+			p.log.Info(fmt.Sprintf("Switching endpoint: %s", e.Hostname))
+		},
+	}
 }
 
 func main() {
@@ -114,41 +154,11 @@ func run(debug bool) error {
 			Upstream:     upstreamBase,
 			ExtraHeaders: hdrs,
 			// Bootstrap with a fake transport that avoid DNS lookup
-			Transport: endpoint.NewTransport(endpoint.New("dns.nextdns.io", "", "45.90.28.0")),
 			OnStateChange: func(state proxy.State) {
 				broadcast("status", map[string]interface{}{"state": state})
 			},
 		},
-		router: endpoint.Manager{
-			Providers: []endpoint.Provider{
-				// Prefer unicast routing.
-				endpoint.SourceURLProvider{
-					SourceURL: "https://router.nextdns.io",
-					Client: &http.Client{
-						// Trick to avoid depending on DNS to contact the router API.
-						Transport: endpoint.NewTransport(
-							endpoint.New("router.nextdns.io", "", []string{
-								"216.239.32.21",
-								"216.239.34.21",
-								"216.239.36.21",
-								"216.239.38.21",
-							}[rand.Intn(3)])),
-					},
-				},
-				// Fallback on anycast.
-				endpoint.StaticProvider(endpoint.New("dns1.nextdns.io", "", "45.90.28.0")),
-				endpoint.StaticProvider(endpoint.New("dns2.nextdns.io", "", "45.90.30.0")),
-				// Fallback on CDN fronting.
-				endpoint.StaticProvider(endpoint.New("d1xovudkxbl47e.cloudfront.net", "", "")),
-			},
-			OnError: func(e endpoint.Endpoint, err error) {
-				p.log.Warn(fmt.Sprintf("Endpoint failed: %s: %v", e.Hostname, err))
-			},
-			OnChange: func(e endpoint.Endpoint, rt http.RoundTripper) {
-				p.log.Info(fmt.Sprintf("Switching endpoint: %s", e.Hostname))
-				p.Transport = rt
-			},
-		},
+
 		ctl: ctl.Server{
 			Namespace: "NextDNS",
 			OnConnect: func(c net.Conn) {
@@ -184,13 +194,7 @@ func run(debug bool) error {
 						p.log.Info("Starting proxy")
 						err = p.Proxy.Start()
 						if err == nil {
-							go func() {
-								ctx, cancel := context.WithTimeout(context.Background(), 1*time.Minute)
-								defer cancel()
-								if err := p.router.Test(ctx); err != nil {
-									p.ErrorLog(fmt.Errorf("router: %v", err))
-								}
-							}()
+							p.Transport = p.nextdnsTransport(false)
 						}
 					} else {
 						p.log.Info("Stopping proxy")
