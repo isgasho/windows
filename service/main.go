@@ -11,7 +11,6 @@ import (
 	"os"
 	"os/exec"
 	"strings"
-	"time"
 
 	"github.com/denisbrodbeck/machineid"
 	"github.com/nextdns/nextdns/resolver/endpoint"
@@ -56,7 +55,6 @@ func (p *proxySvc) nextdnsTransport(hpm bool) http.RoundTripper {
 		qs = "?hardened_privacy=1"
 	}
 	return &endpoint.Manager{
-		MinTestInterval: time.Second,
 		Providers: []endpoint.Provider{
 			// Prefer unicast routing.
 			&endpoint.SourceURLProvider{
