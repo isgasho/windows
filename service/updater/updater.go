@@ -111,37 +111,47 @@ func (u *Updater) CheckNow() error {
 		if u.OnUpgrade != nil {
 			u.OnUpgrade(channel.Version)
 		}
-		return u.upgrade(channel.URL)
+		return u.upgrade(channel.URL, channel.Version)
 	}
 	return nil
 }
 
-func (u *Updater) upgrade(url string) error {
-	installerPath, err := u.downloadInstaller(url)
+func (u *Updater) upgrade(url, version string) error {
+	installerPath, err := u.downloadInstaller(url, version)
 	if err != nil {
 		return err
 	}
 	cmd := exec.Command(installerPath, "/S")
-	return cmd.Run()
+	if err := cmd.Run(); err != nil {
+		_ = os.Remove(installerPath)
+	}
+	return err
 }
 
-func (u *Updater) downloadInstaller(url string) (string, error) {
+func (u *Updater) downloadInstaller(url, version string) (string, error) {
 	res, err := http.Get(url)
 	if err != nil {
 		return "", err
 	}
 	defer res.Body.Close()
-	f, err := ioutil.TempFile("", "nextdns-upgrader*.exe")
+	installPath := filepath.Join(os.TempDir(), fmt.Sprintf("NextDNS Upgrader %s.exe", version))
+	if st, err := os.Stat(installPath); err == nil && time.Since(st.ModTime()) < 24*time.Hour {
+		// We already have the installer for this version in the tmp directory,
+		// do not re-download it.
+		return installPath, nil
+	}
+	os.Remove(installPath)
+	f, err := os.OpenFile(installPath, os.O_RDWR|os.O_CREATE|os.O_EXCL, 0600)
 	if err != nil {
-		return f.Name(), err
+		return "", err
 	}
 	defer f.Close()
 	_, err = io.Copy(f, res.Body)
 	if err != nil {
-		os.Remove(f.Name())
+		_ = os.Remove(f.Name())
 		return "", err
 	}
-	return f.Name(), nil
+	return installPath, nil
 }
 
 func (u *Updater) logErr(err error) {
