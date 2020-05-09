@@ -15,11 +15,11 @@ import (
 	"github.com/denisbrodbeck/machineid"
 	"github.com/nextdns/nextdns/resolver/endpoint"
 
-	"github.com/rs/nextdns-windows/ctl"
-	"github.com/rs/nextdns-windows/proxy"
-	"github.com/rs/nextdns-windows/settings"
-	"github.com/rs/nextdns-windows/svc"
-	"github.com/rs/nextdns-windows/updater"
+	"github.com/nextdns/windows/ctl"
+	"github.com/nextdns/windows/proxy"
+	"github.com/nextdns/windows/settings"
+	"github.com/nextdns/windows/svc"
+	"github.com/nextdns/windows/updater"
 )
 
 const upstreamBase = "https://dns.nextdns.io/"

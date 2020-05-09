@@ -15,7 +15,7 @@ import (
 	"sync"
 	"time"
 
-	tun "github.com/rs/nextdns-windows/tun"
+	tun "github.com/nextdns/windows/tun"
 )
 
 type State string

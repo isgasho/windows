@@ -1,4 +1,4 @@
-module github.com/rs/nextdns-windows
+module github.com/nextdns/windows
 
 go 1.13
 
