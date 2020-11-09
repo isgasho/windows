@@ -14,9 +14,9 @@ ${StrLoc}
 
 Name NextDNS
 BrandingText "NextDNS Inc"
-!define VERSIONMAJOR 1
+!define VERSIONMAJOR 2
 !define VERSIONMINOR 0
-!define VERSIONBUILD 12
+!define VERSIONBUILD 0
 !define MUI_PRODUCT "NextDNS"
 !define MUI_FILE "NextDNS"
 !define MUI_VERSION "${VERSIONMAJOR}.${VERSIONMINOR}.${VERSIONBUILD}" 
@@ -38,13 +38,13 @@ InstallDirRegKey HKCU "Software\${MUI_PRODUCT}" ""
 ;ShowInstDetails show
 ;ShowUninstDetails show
 
-Function .onInit
-  !insertmacro MULTIUSER_INIT
-FunctionEnd
-
-Function un.onInit
-  !insertmacro MULTIUSER_UNINIT
-FunctionEnd
+!macro SecUnSelect SecId
+  Push $0
+  IntOp $0 ${SF_USELECTED} | ${SF_RO}
+  SectionSetFlags ${SecId} $0
+  SectionSetText  ${SecId} ""
+  Pop $0
+!macroend
 
 !insertmacro MUI_PAGE_WELCOME
 !insertmacro MUI_PAGE_LICENSE "..\resource\license.rtf"
@@ -58,7 +58,7 @@ FunctionEnd
 
 !insertmacro MUI_LANGUAGE "English"
 
-Section "TAP Device"
+Section "TAP Device" SEC_TAP
   SetOutPath "$INSTDIR\tap"
 
   UserInfo::GetAccountType
@@ -115,6 +115,16 @@ Section "TAP Device"
   RMDir /r "$INSTDIR\tap"
 SectionEnd
 
+Section "NextDNS Unleak" SEC_UNLEAK
+  SetOutPath "$INSTDIR"
+  DetailPrint "Installing NextDNS Unleak..."
+
+  ${nsProcess::KillProcess} "dnsunleak.exe" $R0
+  ${nsProcess::Unload}
+  Sleep 5000
+  File "..\dnsunleak\bin\dnsunleak.exe"
+SectionEnd
+
 Section "NextDNS Service"
   SetOutPath "$INSTDIR"
   DetailPrint "Installing NextDNS Service..."
@@ -130,7 +140,6 @@ Section "NextDNS Service"
   ${Else}
     File "/oname=${MUI_PRODUCT}Service.exe" "..\service\bin\i386\service.exe"
   ${EndIf}
-  File "..\dnsunleak\bin\dnsunleak.exe"
   nsExec::ExecToLog /timeout=180000 '"${MUI_PRODUCT}Service.exe" -service install'
   nsExec::ExecToLog /timeout=180000 '"${MUI_PRODUCT}Service.exe" -service start'
 SectionEnd
@@ -219,3 +228,21 @@ Section "Uninstall"
   ; Remove install folder reg key
   DeleteRegKey /ifempty HKCU "Software\${MUI_PRODUCT}"
 SectionEnd
+
+Function .onInit
+  !insertmacro MULTIUSER_INIT
+  nsExec::Exec 'netsh dns show encryption'
+  Pop $0
+  IntCmp $0 0 disable_tap
+enable_tap:
+  Goto exit
+disable_tap:
+  !insertmacro SecUnSelect ${SEC_TAP}
+  !insertmacro SecUnSelect ${SEC_UNLEAK}
+exit:
+FunctionEnd
+
+Function un.onInit
+  !insertmacro MULTIUSER_UNINIT
+FunctionEnd
+

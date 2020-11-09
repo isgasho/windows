@@ -5,87 +5,50 @@ import (
 	"fmt"
 	"hash/crc64"
 	"log"
-	"math/rand"
 	"net"
-	"net/http"
 	"os"
 	"os/exec"
 	"strings"
 
 	"github.com/denisbrodbeck/machineid"
-	"github.com/nextdns/nextdns/resolver/endpoint"
 
 	"github.com/nextdns/windows/ctl"
 	"github.com/nextdns/windows/proxy"
 	"github.com/nextdns/windows/settings"
 	"github.com/nextdns/windows/svc"
 	"github.com/nextdns/windows/updater"
+	"github.com/nextdns/windows/windoh"
 )
 
-const upstreamBase = "https://dns.nextdns.io/"
-
-type proxySvc struct {
-	proxy.Proxy
-	ctl ctl.Server
-	log svc.Logger
+type impl interface {
+	SetConfigID(id string)
+	SetDeviceInfo(name, model, id, version string)
+	State() string
+	Start() error
+	Stop() error
 }
 
-func (p *proxySvc) Start(log svc.Logger) error {
-	p.log = log
+type nextdnsSvc struct {
+	impl impl
+	ctl  ctl.Server
+	log  svc.Logger
+}
+
+func (s *nextdnsSvc) Start(log svc.Logger) error {
+	s.log = log
 	log.Info("Service starting")
 	defer log.Info("Service started")
-	return p.ctl.Start()
+	return s.ctl.Start()
 }
 
-func (p *proxySvc) Stop(log svc.Logger) error {
-	p.log = log
+func (s *nextdnsSvc) Stop(log svc.Logger) error {
+	s.log = log
 	log.Info("Service stopping")
 	defer log.Info("Service stopped")
-	if err := p.Proxy.Stop(); err != nil {
+	if err := s.impl.Stop(); err != nil {
 		return err
 	}
-	return p.ctl.Stop()
-}
-
-// nextdnsTransport returns a endpoint.Manager configured to connect to NextDNS
-// using different steering techniques.
-func (p *proxySvc) nextdnsTransport(hpm bool) http.RoundTripper {
-	var qs string
-	if hpm {
-		qs = "?hardened_privacy=1"
-	}
-	return &endpoint.Manager{
-		Providers: []endpoint.Provider{
-			// Prefer unicast routing.
-			&endpoint.SourceURLProvider{
-				SourceURL: "https://router.nextdns.io" + qs,
-				Client: &http.Client{
-					// Trick to avoid depending on DNS to contact the router API.
-					Transport: endpoint.MustNew(fmt.Sprintf("https://router.nextdns.io#%s", []string{
-						"216.239.32.21",
-						"216.239.34.21",
-						"216.239.36.21",
-						"216.239.38.21",
-					}[rand.Intn(3)])),
-				},
-			},
-			// Fallback on anycast.
-			endpoint.StaticProvider([]*endpoint.Endpoint{
-				endpoint.MustNew("https://dns1.nextdns.io#45.90.28.0"),
-				endpoint.MustNew("https://dns2.nextdns.io#45.90.30.0"),
-			}),
-			// Fallback on CDN fronting.
-			endpoint.StaticProvider([]*endpoint.Endpoint{
-				endpoint.MustNew("https://d1xovudkxbl47e.cloudfront.net"),
-			}),
-		},
-		OnError: func(e *endpoint.Endpoint, err error) {
-			p.log.Warn(fmt.Sprintf("Endpoint failed: %s: %v", e.Hostname, err))
-		},
-		OnChange: func(e *endpoint.Endpoint) {
-			p.log.Info(fmt.Sprintf("Switching endpoint: %s", e.Hostname))
-		},
-	}
+	return s.ctl.Stop()
 }
 
 func main() {
@@ -118,55 +81,33 @@ func main() {
 }
 
 func run(debug bool) error {
-	hdrs := http.Header{}
 	vers := updater.CurrentVersion()
 	if vers == "" {
 		vers = "dev"
-	}
-	hdrs.Set("User-Agent", "nextdns-windows/"+vers)
-
-	reportHdr := hdrs.Clone()
-	if model := getModel(); model != "" {
-		reportHdr.Set("X-Device-Model", model)
-	}
-	if hostname := getHostname(); hostname != "" {
-		reportHdr.Set("X-Device-Name", hostname)
-	}
-	if hostID := getShortMachineID(); hostID != "" {
-		reportHdr.Set("X-Device-Id", hostID)
 	}
 
 	up := &updater.Updater{
 		URL: "https://storage.googleapis.com/nextdns_windows/info.json",
 	}
 
-	var p *proxySvc
+	var s *nextdnsSvc
 	broadcast := func(name string, data map[string]interface{}) {
-		p.log.Info(fmt.Sprintf("send event: %v %v", name, data))
-		if err := p.ctl.Broadcast(ctl.Event{Name: name, Data: data}); err != nil {
-			p.log.Error(fmt.Sprintf("send event error: %v", err))
+		s.log.Info(fmt.Sprintf("send event: %v %v", name, data))
+		if err := s.ctl.Broadcast(ctl.Event{Name: name, Data: data}); err != nil {
+			s.log.Error(fmt.Sprintf("send event error: %v", err))
 		}
 	}
-	p = &proxySvc{
-		Proxy: proxy.Proxy{
-			Upstream:     upstreamBase,
-			ExtraHeaders: hdrs,
-			// Bootstrap with a fake transport that avoid DNS lookup
-			OnStateChange: func(state proxy.State) {
-				broadcast("status", map[string]interface{}{"state": state})
-			},
-		},
-
+	s = &nextdnsSvc{
 		ctl: ctl.Server{
 			Namespace: "NextDNS",
 			OnConnect: func(c net.Conn) {
-				p.log.Info(fmt.Sprintf("UI Connect: %v", c))
+				s.log.Info(fmt.Sprintf("UI Connect: %v", c))
 			},
 			OnDisconnect: func(c net.Conn) {
-				p.log.Info(fmt.Sprintf("UI Disconnect: %v", c))
+				s.log.Info(fmt.Sprintf("UI Disconnect: %v", c))
 			},
 			Handler: ctl.EventHandlerFunc(func(e ctl.Event) {
-				p.log.Info(fmt.Sprintf("received event: %s %v", e.Name, e.Data))
+				s.log.Info(fmt.Sprintf("received event: %s %v", e.Name, e.Data))
 				switch e.Name {
 				case "open":
 					// Use to open the GUI window in the existing instance of
@@ -177,68 +118,77 @@ func run(debug bool) error {
 						return
 					}
 					// Apply settings
-					s := settings.FromMap(e.Data)
-					p.Upstream = upstreamBase + s.Configuration
-					if s.ReportDeviceName {
-						p.ExtraHeaders = reportHdr
+					stg := settings.FromMap(e.Data)
+					s.impl.SetConfigID(stg.Configuration)
+					if stg.ReportDeviceName {
+						s.impl.SetDeviceInfo(getHostname(), getModel(), getShortMachineID(), vers)
 					} else {
-						p.ExtraHeaders = hdrs
+						s.impl.SetDeviceInfo("", "", "", vers)
 					}
-					up.SetAutoRun(s.CheckUpdates)
+					up.SetAutoRun(stg.CheckUpdates)
 
 					// Switch connection status
 					var err error
-					if s.Enabled {
-						p.log.Info("Starting proxy")
-						err = p.Proxy.Start()
-						if err == nil {
-							p.Transport = p.nextdnsTransport(false)
-						}
+					if stg.Enabled {
+						s.log.Info("Starting service")
+						err = s.impl.Start()
 					} else {
-						p.log.Info("Stopping proxy")
-						err = p.Proxy.Stop()
+						s.log.Info("Stopping service")
+						err = s.impl.Stop()
 					}
 					if err != nil {
-						var errStr string
-						if err != proxy.ErrAlreadyStarted && err != proxy.ErrAlreadyStopped {
-							errStr = err.Error()
-						}
 						broadcast("status", map[string]interface{}{
-							"state": p.Proxy.State(),
-							"error": errStr,
+							"state": s.impl.State(),
+							"error": err.Error(),
 						})
 					}
 				default:
-					p.ErrorLog(fmt.Errorf("invalid event: %v", e))
+					s.log.Error(fmt.Sprintf("invalid event: %v", e))
 				}
 			}),
 		},
 	}
 
-	// p.QueryLog = func(msgID uint16, qname string) {
-	// 	p.log.Info(fmt.Sprintf("resolve %x %s", msgID, qname))
-	// }
-	p.InfoLog = func(msg string) {
-		p.log.Info(msg)
+	if windoh.Available() {
+		s.impl = &windoh.Config{
+			OnStateChange: func(state string) {
+				broadcast("status", map[string]interface{}{"state": state})
+			},
+		}
+	} else {
+		s.impl = &proxy.Proxy{
+			Upstream: "https://dns.nextdns.io/",
+			// Bootstrap with a fake transport that avoid DNS lookup
+			OnStateChange: func(state string) {
+				broadcast("status", map[string]interface{}{"state": state})
+			},
+			// QueryLog: func(msgID uint16, qname string) {
+			// 	s.log.Info(fmt.Sprintf("resolve %x %s", msgID, qname))
+			// },
+			InfoLog: func(msg string) {
+				s.log.Info(msg)
+			},
+			ErrorLog: func(err error) {
+				s.log.Error(fmt.Sprint(err))
+			},
+		}
 	}
-	p.ErrorLog = func(err error) {
-		p.log.Error(fmt.Sprint(err))
-	}
-	p.ctl.ErrorLog = func(err error) {
-		p.log.Error(fmt.Sprint(err))
+
+	s.ctl.ErrorLog = func(err error) {
+		s.log.Error(fmt.Sprint(err))
 	}
 	up.OnUpgrade = func(newVersion string) {
-		p.log.Info(fmt.Sprintf("upgrading from %s to %s", updater.CurrentVersion(), newVersion))
+		s.log.Info(fmt.Sprintf("upgrading from %s to %s", updater.CurrentVersion(), newVersion))
 	}
 	up.ErrorLog = func(err error) {
-		p.log.Error(fmt.Sprint(err))
+		s.log.Error(fmt.Sprint(err))
 	}
 	log.SetOutput(writerFunc(func(b []byte) (n int, err error) {
-		p.log.Info(string(b))
+		s.log.Info(string(b))
 		return len(b), nil
 	}))
 
-	return svc.Run(p, "NextDNSService", debug)
+	return svc.Run(s, "NextDNSService", debug)
 }
 
 type writerFunc func(p []byte) (n int, err error)

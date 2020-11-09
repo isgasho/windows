@@ -4,9 +4,9 @@ import (
 	"bufio"
 	"bytes"
 	"context"
-	"errors"
 	"fmt"
 	"io"
+	"math/rand"
 	"net/http"
 	"os"
 	"os/exec"
@@ -15,22 +15,16 @@ import (
 	"sync"
 	"time"
 
+	"github.com/nextdns/nextdns/resolver/endpoint"
 	tun "github.com/nextdns/windows/tun"
 )
 
-type State string
-
 const (
-	StateStopped     State = "stopped"
-	StateStarting    State = "starting"
-	StateStarted     State = "started"
-	StateReasserting State = "reasserting"
-	StateStopping    State = "stopping"
-)
-
-var (
-	ErrAlreadyStarted = errors.New("already started")
-	ErrAlreadyStopped = errors.New("already stopped")
+	StateStopped     = "stopped"
+	StateStarting    = "starting"
+	StateStarted     = "started"
+	StateReasserting = "reasserting"
+	StateStopping    = "stopping"
 )
 
 type Proxy struct {
@@ -38,7 +32,7 @@ type Proxy struct {
 
 	ExtraHeaders http.Header
 
-	OnStateChange func(State)
+	OnStateChange func(state string)
 
 	// Transport is the http.RoundTripper used to perform DoH requests.
 	Transport http.RoundTripper
@@ -54,26 +48,48 @@ type Proxy struct {
 
 	mu    sync.Mutex
 	tun   io.ReadWriteCloser
-	state State
+	state string
 	stop  chan struct{}
 
 	dedup dedup
 }
 
-func (p *Proxy) State() State {
+func (p *Proxy) SetConfigID(id string) {
+	p.Upstream = "https://dns.nextdns.io/" + id
+}
+
+func (p *Proxy) SetDeviceInfo(name, model, id, version string) {
+	reportHdr := p.ExtraHeaders
+	if reportHdr == nil {
+		reportHdr = http.Header{}
+		p.ExtraHeaders = reportHdr
+	}
+	if name != "" {
+		reportHdr.Set("X-Device-Name", name)
+	}
+	if model != "" {
+		reportHdr.Set("X-Device-Model", model)
+	}
+	if id != "" {
+		reportHdr.Set("X-Device-Id", id)
+	}
+	reportHdr.Set("User-Agent", "nextdns-windows/"+version)
+}
+
+func (p *Proxy) State() string {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	return p.stateLocked()
 }
 
-func (p *Proxy) stateLocked() State {
+func (p *Proxy) stateLocked() string {
 	if p.state == "" {
 		return StateStopped
 	}
 	return p.state
 }
 
-func (p *Proxy) setStateLocked(s State) {
+func (p *Proxy) setStateLocked(s string) {
 	if p.state == s {
 		return
 	}
@@ -87,7 +103,7 @@ func (p *Proxy) Start() (err error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	if p.stateLocked() != StateStopped {
-		return ErrAlreadyStarted
+		return nil // already started
 	}
 	p.setStateLocked(StateStarting)
 	return p.startLocked()
@@ -97,8 +113,50 @@ func (p *Proxy) startLocked() (err error) {
 	if p.tun, err = tun.OpenTunDevice("tun0", "192.0.2.43", "192.0.2.42", "255.255.255.0", []string{"192.0.2.42"}); err != nil {
 		return err
 	}
+	p.Transport = p.nextdnsTransport()
 	go p.run()
 	return nil
+}
+
+// nextdnsTransport returns a endpoint.Manager configured to connect to NextDNS
+// using different steering techniques.
+func (p *Proxy) nextdnsTransport() http.RoundTripper {
+	return &endpoint.Manager{
+		Providers: []endpoint.Provider{
+			// Prefer unicast routing.
+			&endpoint.SourceURLProvider{
+				SourceURL: "https://router.nextdns.io",
+				Client: &http.Client{
+					// Trick to avoid depending on DNS to contact the router API.
+					Transport: endpoint.MustNew(fmt.Sprintf("https://router.nextdns.io#%s", []string{
+						"216.239.32.21",
+						"216.239.34.21",
+						"216.239.36.21",
+						"216.239.38.21",
+					}[rand.Intn(3)])),
+				},
+			},
+			// Fallback on anycast.
+			endpoint.StaticProvider([]*endpoint.Endpoint{
+				endpoint.MustNew("https://dns1.nextdns.io#45.90.28.0"),
+				endpoint.MustNew("https://dns2.nextdns.io#45.90.30.0"),
+			}),
+			// Fallback on CDN fronting.
+			endpoint.StaticProvider([]*endpoint.Endpoint{
+				endpoint.MustNew("https://d1xovudkxbl47e.cloudfront.net"),
+			}),
+		},
+		OnError: func(e *endpoint.Endpoint, err error) {
+			if p.ErrorLog != nil {
+				p.ErrorLog(fmt.Errorf("Endpoint failed: %s: %v", e.Hostname, err))
+			}
+		},
+		OnChange: func(e *endpoint.Endpoint) {
+			if p.InfoLog != nil {
+				p.InfoLog(fmt.Sprintf("Switching endpoint: %s", e.Hostname))
+			}
+		},
+	}
 }
 
 func (p *Proxy) Stop() (err error) {
@@ -106,7 +164,7 @@ func (p *Proxy) Stop() (err error) {
 	defer p.mu.Unlock()
 	switch p.stateLocked() {
 	case StateStopped, StateStarting:
-		return ErrAlreadyStopped
+		return nil // already stopped
 	}
 	p.setStateLocked(StateStopping)
 	if p.tun != nil {
@@ -117,6 +175,7 @@ func (p *Proxy) Stop() (err error) {
 		close(p.stop)
 		p.stop = nil
 	}
+	p.Transport = nil
 	return err
 }
 
